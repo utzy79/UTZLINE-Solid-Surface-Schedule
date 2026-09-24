@@ -1,8 +1,10 @@
 # UTZLINE Solid Surface Schedule — installable app
 
-**Current version: v4** (its own independent version line, separate from
+**Current version: v5** (its own independent version line, separate from
 every other app in the family — bump this line, and add a dated entry
 below, every time a new build ships.)
+
+**v5 (2026-09-24):** joinery-schedule.json v2 — third and final round of the same rebuild shipped for joinery-status.json in v3 and machining-flags.json in v4, both below. This app reads the MAIN UTZLINE Scheduler's own `joinery-schedule.json` (entirely separate from this app's own `solid-surface-schedule.json`, which this round does not touch) to flag items that are out of scope for a Solid Surface schedule — that file is now event-sourced (one immutable event file per Save/Clear action under `Project Saves/Joinery Schedule/<Level> - <Room> - <Code>/`, folded down to the single latest event by timestamp, matching that file's own always-atomic-whole write semantics) instead of one shared mutable array file. This app's own read path picks up the same one-time, automatic, lossless migration. No observable change to this app's own display or to its own `solid-surface-schedule.json` in any way. This closes out the three follow-up rounds Andrew asked for on top of the original safety-net work. `service-worker.js` cache bumped to `utzline-solid-surface-schedule-cache-v5`.
 
 **v4 (2026-09-24):** machining-flags.json v2 — second round of the same rebuild shipped for joinery-status.json in v3 below. This app is a pure read-only consumer of Machine Schedule's own `machining-flags.json` (an optional, best-effort reference column showing an item's Solid Surface cut state) — that file is now event-sourced (one immutable event file per cut-state change under `Project Saves/Machining Flags/<Level> - <Room> - <Code>/`, folded together with the latest event per cut type winning) instead of one shared mutable array file. This app's own read path picks up the same one-time, automatic, lossless migration. No observable change to this app's own display.
 

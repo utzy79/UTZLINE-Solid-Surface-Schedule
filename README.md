@@ -1,8 +1,10 @@
 # UTZLINE Solid Surface Schedule — installable app
 
-**Current version: v3** (its own independent version line, separate from
+**Current version: v4** (its own independent version line, separate from
 every other app in the family — bump this line, and add a dated entry
 below, every time a new build ships.)
+
+**v4 (2026-09-24):** machining-flags.json v2 — second round of the same rebuild shipped for joinery-status.json in v3 below. This app is a pure read-only consumer of Machine Schedule's own `machining-flags.json` (an optional, best-effort reference column showing an item's Solid Surface cut state) — that file is now event-sourced (one immutable event file per cut-state change under `Project Saves/Machining Flags/<Level> - <Room> - <Code>/`, folded together with the latest event per cut type winning) instead of one shared mutable array file. This app's own read path picks up the same one-time, automatic, lossless migration. No observable change to this app's own display.
 
 **v3 (2026-09-24):** joinery-status.json v2 — Andrew, verbatim, on the coming scale: "we will have 30 people using this app in different stages, all coming back to the same database... needs to be foolproof and nevel lose data. some of this will be done via dropbox upload after the fact." The shared `joinery-status.json` used to be one JSON array file, rewritten whole on every save — risky with up to 15 people across five apps, some syncing in late via Dropbox. Replaced with one small immutable event file per status change, filed under `Project Saves/Joinery Status/<Level> - <Room> - <Code>/` — two writers can never collide, and a late Dropbox sync can never overwrite a newer save regardless of arrival order. The old file is migrated automatically and losslessly (once, idempotently) the first time any app in the family opens a project after this update, and left in place afterward, untouched. This app is a pure read-only consumer of `joinery-status.json` (never writes it) — the v2 job-note button above is completely unchanged, just now folded from events instead of read off a shared array. `service-worker.js` cache bumped to `utzline-solid-surface-schedule-cache-v3`.
 

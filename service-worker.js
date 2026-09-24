@@ -152,7 +152,7 @@
 // in parallel, each in their own codebase -- this app's own copy touches
 // nothing outside this file and index.html.)
 var ICON_VERSION = "v1";
-var CACHE_NAME = "utzline-solid-surface-schedule-cache-v3";
+var CACHE_NAME = "utzline-solid-surface-schedule-cache-v4";
 
 var PRECACHE_URLS = [
   "./",

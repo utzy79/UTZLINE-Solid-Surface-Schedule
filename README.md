@@ -1,8 +1,10 @@
 # UTZLINE Solid Surface Schedule — installable app
 
-**Current version: v2** (its own independent version line, separate from
+**Current version: v3** (its own independent version line, separate from
 every other app in the family — bump this line, and add a dated entry
 below, every time a new build ships.)
+
+**v3 (2026-09-24):** joinery-status.json v2 — Andrew, verbatim, on the coming scale: "we will have 30 people using this app in different stages, all coming back to the same database... needs to be foolproof and nevel lose data. some of this will be done via dropbox upload after the fact." The shared `joinery-status.json` used to be one JSON array file, rewritten whole on every save — risky with up to 15 people across five apps, some syncing in late via Dropbox. Replaced with one small immutable event file per status change, filed under `Project Saves/Joinery Status/<Level> - <Room> - <Code>/` — two writers can never collide, and a late Dropbox sync can never overwrite a newer save regardless of arrival order. The old file is migrated automatically and losslessly (once, idempotently) the first time any app in the family opens a project after this update, and left in place afterward, untouched. This app is a pure read-only consumer of `joinery-status.json` (never writes it) — the v2 job-note button above is completely unchanged, just now folded from events instead of read off a shared array. `service-worker.js` cache bumped to `utzline-solid-surface-schedule-cache-v3`.
 
 **v2 (2026-09-24):** added an **"Open job note"** button to the
 row-actions column of both the Overall Schedule and per-project Schedule

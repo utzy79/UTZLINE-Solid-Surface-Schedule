@@ -114,8 +114,45 @@
 // ITP, Manufacture ITP, Delivery ITP, Projects, the main Scheduler, or
 // Machine Schedule in any way -- this app owns solid-surface-schedule.json
 // exclusively and reads everything else strictly read-only.)
+//
+// (v2, 2026-09-24: added an "Open job note" button to the row-actions
+// column of both the Overall and per-project schedule tables, per Andrew's
+// verbatim request across the whole "any scheduler" family: "on any
+// scheduler, there needs to be a open job note button for each joinery
+// item. between delay and view on plan." Placed as the FIRST button in
+// that column -- before the existing "View on plan"/"Edit schedule"
+// buttons, matching "between delay and view on plan" since Delay is the
+// previous column and row-actions is the very next one.
+//
+// A "job note" in this ecosystem is exclusively a PDF attachment (site
+// instructions, a delivery docket, etc) -- there is no text body, and this
+// app never writes one, only reads: content lives in a per-item folder,
+// <Project>/Project Saves/Job Notes/<key>/, where key is
+// joineryItemPageKey(level, room, joineryId) -- exactly mirroring every
+// other reader app in the family (Install ITP, UTZLINE Projects). Every
+// PDF ever added stays there forever (oldest never deleted); listJobNotes
+// lists them newest-first via jobNoteSortKey, which finds the
+// "yyyy-mm-dd hh-mm-ss" stamp whether it's a filename PREFIX (older files)
+// or SUFFIX (current format, per Andrew's 2026-09-23 "dont want job notes
+// to have this format at the start" request), so both shapes sort
+// correctly. The button itself is gated on that row's own
+// joinery-status.json record already carrying jobNote:true/jobNoteAt/
+// jobNoteBy (set by Site Measure or the Viewer when a note is added, read
+// via the SAME findJoineryStatus call buildEnrichedRows already makes --
+// no new file read needed for the flag itself) -- an item with no job note
+// gets no button at all, never a dead-end "no notes yet" dialog. Clicking
+// it opens a shared dialog (one instance, reused by every row on both
+// table screens) listing each PDF with an "Open" action that reads the
+// real file handle, creates an object URL, and opens it in a new tab,
+// revoking the URL after 60s. Scoped correctly within this app's own
+// hasSolidSurface:true filtering -- the flag/button/dialog logic reads off
+// the already-filtered row objects, so an out-of-scope item never gets a
+// button regardless of its own jobNote flag. Companion apps UTZLINE
+// Scheduler and UTZLINE Machine Schedule are getting the identical feature
+// in parallel, each in their own codebase -- this app's own copy touches
+// nothing outside this file and index.html.)
 var ICON_VERSION = "v1";
-var CACHE_NAME = "utzline-solid-surface-schedule-cache-v1";
+var CACHE_NAME = "utzline-solid-surface-schedule-cache-v2";
 
 var PRECACHE_URLS = [
   "./",

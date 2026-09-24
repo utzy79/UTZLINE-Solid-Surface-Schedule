@@ -1,8 +1,41 @@
 # UTZLINE Solid Surface Schedule — installable app
 
-**Current version: v1** (its own independent version line, separate from
+**Current version: v2** (its own independent version line, separate from
 every other app in the family — bump this line, and add a dated entry
 below, every time a new build ships.)
+
+**v2 (2026-09-24):** added an **"Open job note"** button to the
+row-actions column of both the Overall Schedule and per-project Schedule
+tables. Andrew, verbatim, across the whole "any scheduler" app family:
+
+> "on any scheduler, there needs to be a open job note button for each
+> joinery item. between delay and view on plan."
+
+Placed as the **first** button in that column, before the existing "View
+on plan"/"Edit schedule" buttons — Delay is the previous column, so
+row-actions is the very next one, matching "between delay and view on
+plan" exactly.
+
+A job note in this ecosystem is exclusively a **PDF attachment** (site
+instructions, a delivery docket, etc) — there's no text body, and this app
+never writes one, only reads. Content lives in a per-item folder,
+`Project Saves/Job Notes/<key>/` (`key` = `joineryItemPageKey(level, room,
+joineryId)`, mirroring every other reader app in the family), and the
+button is gated on that same row's `joinery-status.json` record already
+carrying `jobNote: true` (set by Site Measure or the Viewer when a note is
+added, read off the SAME `findJoineryStatus` call `buildEnrichedRows`
+already makes — no new file read needed just for the flag). An item with
+no job note gets **no button at all**, never a dead-end "no notes yet"
+dialog. Clicking it opens a shared dialog listing every PDF ever attached
+(oldest never deleted, newest-first), each with an "Open" action that
+opens the real file in a new tab. Ported from Install ITP's own "View job
+note" feature — same storage format, same `jobNoteSortKey` newest-first
+sort that handles both the old (prefix) and current (suffix) timestamp
+filename formats.
+
+Companion apps UTZLINE Scheduler and UTZLINE Machine Schedule are getting
+the identical feature at the same time, each in their own codebase — this
+change touches only this app's own `index.html`/`service-worker.js`.
 
 **v1 (2026-09-23):** first release. Andrew, verbatim:
 
@@ -202,11 +235,15 @@ step:
 (Playwright against a fake File System Access API, same convention as the
 rest of the family):
 
-- Seeds a fake Projects root with two items in one project — one with
-  `hasSolidSurface: true` and an existing main-schedule
-  `joinery-schedule.json` record, one with `hasSolidSurface: false`.
-- Confirms only the Solid Surface item appears in the Overall table.
-- Opens its Set Schedule dialog and confirms the Required Delivery Date
+- Seeds a fake Projects root with three items in one project — SS-1
+  (`hasSolidSurface: true`, an existing main-schedule
+  `joinery-schedule.json` record, AND a real job-note PDF on disk under
+  `Project Saves/Job Notes/<key>/` with `jobNote: true` on its
+  `joinery-status.json` record), SS-2 (`hasSolidSurface: true`, no job
+  note), and CARC-1 (`hasSolidSurface: false`).
+- Confirms only the two Solid Surface items appear in the Overall table
+  (never CARC-1).
+- Opens SS-1's Set Schedule dialog and confirms the Required Delivery Date
   field is pre-filled from the main schedule's own date, with the prefill
   note visible.
 - Changes the date and saves; confirms `solid-surface-schedule.json` now
@@ -214,6 +251,12 @@ rest of the family):
   is byte-for-byte untouched.
 - Reopens the dialog and confirms it now shows this app's own saved value
   (not re-pulled from the main schedule), with the prefill note hidden.
+- **"Open job note" (v2, 2026-09-24):** on BOTH the Overall and
+  per-project schedule tables, confirms SS-1 (has a job note) shows the
+  button as the FIRST row-action, before "View on plan"; SS-2 (no job
+  note) shows no button at all; clicking SS-1's button opens the shared
+  dialog listing that one PDF by name, and its "Open" action opens a real
+  new browser tab at a `blob:` object URL for the file.
 - Confirms the plan viewer renders with no `viewBox` regression and its
   image/markers land within the visible stage bounds (the same real-pixel
   check pattern used to catch Scheduler's own v12 bug).

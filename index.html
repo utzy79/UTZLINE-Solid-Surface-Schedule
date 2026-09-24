@@ -409,6 +409,17 @@
   .modal p.sub{ margin-bottom: 16px; }
   .modal-actions{ display:flex; justify-content:space-between; align-items:center; gap: 10px; margin-top: 6px; }
   .modal-actions .right{ display:flex; gap:10px; }
+  /* ---- "Open job note" row-actions button + its list dialog (2026-09-24) --
+     ported from Install ITP's own "View job note" feature (same storage
+     format, same jobNoteSortKey trick), see this app's own jobNote* helpers
+     below for the full rationale. */
+  .jobnote-row{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:9px 11px; border-radius:8px; border:1px solid var(--border);
+    background:var(--panel2); font-size:12.5px;
+  }
+  .jobnote-row-name{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .jobnote-empty{ font-size:13px; color:var(--muted2); padding:2px 2px 8px; margin:0; }
   .computed-box{
     background: #0e161a; border: 1px solid var(--border); border-radius: 8px;
     padding: 10px 12px; font-size: 14px; margin-bottom: 14px;
@@ -798,6 +809,24 @@
       <div class="right">
         <button class="btn secondary" id="schedCancelBtn">Cancel</button>
         <button class="btn" id="schedSaveBtn">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- "Open job note" (2026-09-24) -- read-only here, see listJobNotes' own
+     comment below. A PDF attached to this exact item from Site Measure or
+     the Viewer. Andrew, verbatim: "on any scheduler, there needs to be a
+     open job note button for each joinery item. between delay and view on
+     plan." -->
+<div class="modal-backdrop" id="jobNoteViewBackdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="jobNoteViewTitle" style="max-width:380px;">
+    <h2 id="jobNoteViewTitle">Job notes</h2>
+    <div id="jobNoteListEl" style="display:flex; flex-direction:column; gap:6px; max-height:280px; overflow-y:auto; margin:12px 0 14px;"></div>
+    <div class="modal-actions">
+      <div></div>
+      <div class="right">
+        <button class="btn secondary" id="jobNoteViewCancel">Close</button>
       </div>
     </div>
   </div>
@@ -1383,6 +1412,61 @@
     }
     return null;
   }
+
+  /* ---- Job notes -- read-only here (2026-09-24) ----
+     Andrew, verbatim: "on any scheduler, there needs to be a open job note
+     button for each joinery item. between delay and view on plan." A job
+     note is exclusively a PDF attachment (site instructions, delivery
+     docket, etc) -- there is no text body. "Adding" one only ever happens
+     from Site Measure or the Viewer; this app (like Install ITP before it)
+     only ever READS the same files, from an "Open job note" button in the
+     row-actions column, gated on that row's own joinery-status.json record
+     already carrying jobNote:true (set by the app that added the note) --
+     see buildEnrichedRows below for where that flag rides onto the row.
+     Key: joineryItemPageKey(level, room, joineryId), mirroring every other
+     reader app in the family exactly. */
+  function joineryItemPageKey(levelName, roomName, joineryCode){
+    return sanitizeFileBase(levelName) + " - " + sanitizeFileBase(roomName) + (joineryCode ? " - " + sanitizeFileBase(joineryCode) : "");
+  }
+  function getJobNotesDirForItem(projectHandle, key){
+    return projectHandle.getDirectoryHandle(projectSavesDirName(), { create: false }).then(function(psH){
+      return psH.getDirectoryHandle("Job Notes", { create: false });
+    }).then(function(jnH){
+      return jnH.getDirectoryHandle(key, { create: false });
+    });
+  }
+  // Same jobNoteSortKey trick as every other reader app in the family
+  // (UTZLINE Projects, Install ITP) -- finds the "yyyy-mm-dd hh-mm-ss" stamp
+  // wherever it sits in the filename (a SUFFIX in current files, a PREFIX
+  // in older ones, per Andrew's 2026-09-23 "dont want job notes to have
+  // this format at the start" request) so both shapes still sort
+  // newest-first correctly.
+  function jobNoteSortKey(fileName){
+    var m = /\d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2}/.exec(fileName || "");
+    return m ? m[0] : "";
+  }
+  function listJobNotes(projectHandle, key){
+    return getJobNotesDirForItem(projectHandle, key).then(function(dirH){
+      var out = [];
+      var iter = dirH.values();
+      function step(){
+        return iter.next().then(function(res){
+          if (res.done) return out;
+          if (res.value && res.value.kind === "file" && /\.pdf$/i.test(res.value.name)) out.push({ fileName: res.value.name, handle: res.value });
+          return step();
+        });
+      }
+      return step();
+    }, function(){ return []; }).then(function(list){
+      list.sort(function(a, b){
+        var ka = jobNoteSortKey(a.fileName), kb = jobNoteSortKey(b.fileName);
+        if (ka !== kb) return kb.localeCompare(ka);
+        return b.fileName.localeCompare(a.fileName);
+      });
+      return list;
+    });
+  }
+
   function statusLabelHtml(statusKey){
     var icon = joineryStatusIcon(statusKey);
     return "<span class=\"status-label\">" + (icon ? "<span class=\"status-icon\">" + icon + "</span>" : "") + escapeHtml(joineryStatusLabel(statusKey)) + "</span>";
@@ -2540,7 +2624,8 @@
   function buildEnrichedRows(items, statusList, scheduleList, projectName, projectHandle, machiningFlagsList){
     var today = todayDateStr();
     return items.map(function(item){
-      var statusKey = (findJoineryStatus(statusList, item.level, item.room, item.joineryId) || {}).status || "";
+      var statusRec = findJoineryStatus(statusList, item.level, item.room, item.joineryId) || {};
+      var statusKey = statusRec.status || "";
       var schedRec = findScheduleRecord(scheduleList, item.level, item.room, item.joineryId);
       var statusHistory = joineryStatusHistoryFor(statusList, item.level, item.room, item.joineryId);
       // Optional, read-only reference column (see readMachiningFlags'
@@ -2579,6 +2664,14 @@
         delayKey: delay.key,
         delayLabel: delay.label,
         delaySeverity: delay.severity,
+        // Presence/metadata flags only (2026-09-24) -- set by Site Measure
+        // or the Viewer when a job note PDF is added, riding along on this
+        // SAME joinery-status.json record already fetched above. See
+        // listJobNotes' own comment for the "Open job note" button this
+        // gates in scheduleRowCells/wireRowActions.
+        jobNote: !!statusRec.jobNote,
+        jobNoteAt: statusRec.jobNoteAt || "",
+        jobNoteBy: statusRec.jobNoteBy || "",
         rawItem: item
       };
     });
@@ -2624,11 +2717,23 @@
       "<td class=\"status-cell\">" + statusLabelHtml(row.statusKey) + "</td>" +
       "<td>" + (row.cutStatus ? escapeHtml(row.cutStatus) : "<span class=\"muted-cell\">—</span>") + "</td>" +
       "<td><span class=\"delay-pill delay-" + row.delayKey + "\">" + escapeHtml(row.delayLabel) + "</span></td>" +
-      "<td class=\"row-actions\"><button type=\"button\" class=\"btn secondary sm view-plan-btn\">View on plan</button><button type=\"button\" class=\"btn secondary sm edit-sched-btn\">Edit schedule</button></td>";
+      // "Open job note" (2026-09-24) -- FIRST button, between Delay and
+      // View on plan, per Andrew's own verbatim placement. Only rendered
+      // when this row's own status record actually carries jobNote:true
+      // (see buildEnrichedRows above) -- an item with no note gets no
+      // button at all, rather than a dead-end "no notes yet" dialog on
+      // every single row.
+      "<td class=\"row-actions\">" + (row.jobNote ? "<button type=\"button\" class=\"btn secondary sm jobnote-btn\">Open job note</button>" : "") + "<button type=\"button\" class=\"btn secondary sm view-plan-btn\">View on plan</button><button type=\"button\" class=\"btn secondary sm edit-sched-btn\">Edit schedule</button></td>";
   }
   function wireRowActions(tr, row, returnScreen){
+    var jobNoteBtn = tr.querySelector(".jobnote-btn");
     var viewBtn = tr.querySelector(".view-plan-btn");
     var editBtn = tr.querySelector(".edit-sched-btn");
+    if (jobNoteBtn){
+      jobNoteBtn.addEventListener("click", function(){
+        openJobNoteDialogForRow(row);
+      });
+    }
     viewBtn.addEventListener("click", function(){
       openPlanCanvasForLevel(row.projectHandle, row.project, row.level, returnScreen);
     });
@@ -2650,6 +2755,53 @@
         if (statusHistoryPop.hidden) showStatusHistoryPop(statusCell, row); else hideStatusHistoryPop();
       });
     }
+  }
+
+  /* ---- "Open job note" dialog (2026-09-24) -- one shared modal reused by
+     every table row's own jobnote-btn, on both the Overall and per-project
+     screens; see listJobNotes' own comment above. */
+  var jobNoteViewBackdrop = document.getElementById("jobNoteViewBackdrop");
+  var jobNoteListEl = document.getElementById("jobNoteListEl");
+  function closeJobNoteDialog(){ jobNoteViewBackdrop.hidden = true; }
+  document.getElementById("jobNoteViewCancel").addEventListener("click", closeJobNoteDialog);
+  jobNoteViewBackdrop.addEventListener("click", function(e){ if (e.target === jobNoteViewBackdrop) closeJobNoteDialog(); });
+  function openJobNoteDialogForRow(row){
+    jobNoteListEl.innerHTML = "<p class=\"jobnote-empty\">Loading…</p>";
+    jobNoteViewBackdrop.hidden = false;
+    var key = joineryItemPageKey(row.level, row.room, row.joineryId);
+    listJobNotes(row.projectHandle, key).then(function(notes){
+      jobNoteListEl.innerHTML = "";
+      if (!notes.length){
+        jobNoteListEl.innerHTML = "<p class=\"jobnote-empty\">No job notes yet for this item.</p>";
+        return;
+      }
+      notes.forEach(function(note){
+        var rowEl = document.createElement("div");
+        rowEl.className = "jobnote-row";
+        var nameSpan = document.createElement("span");
+        nameSpan.className = "jobnote-row-name";
+        nameSpan.textContent = note.fileName;
+        rowEl.appendChild(nameSpan);
+        var openBtn = document.createElement("button");
+        openBtn.type = "button"; openBtn.className = "btn secondary sm";
+        openBtn.textContent = "Open";
+        openBtn.addEventListener("click", function(){
+          note.handle.getFile().then(function(file){
+            var url = URL.createObjectURL(file);
+            window.open(url, "_blank");
+            setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
+          }).catch(function(err){
+            console.error("Open job note failed:", err);
+            showToast("Couldn't open that file — try again.");
+          });
+        });
+        rowEl.appendChild(openBtn);
+        jobNoteListEl.appendChild(rowEl);
+      });
+    }).catch(function(err){
+      console.error("List job notes failed:", err);
+      jobNoteListEl.innerHTML = "<p class=\"jobnote-empty\">Couldn't load job notes — try again.</p>";
+    });
   }
 
   /* ============================== Overall Schedule screen ============================== */

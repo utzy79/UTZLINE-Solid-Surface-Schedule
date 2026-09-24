@@ -1,0 +1,37 @@
+{
+  "name": "UTZLINE Solid Surface Schedule",
+  "short_name": "Solid Surface Schedule",
+  "description": "Standalone Solid Surface delivery/manufacture scheduling companion for the UTZLINE family, scoped to only the joinery items flagged \"Has Solid Surface\": set a required delivery date and manufacture lead time per item (right-click/long-press/tap its marker on a read-only plan view, pre-filled from the main Scheduler's own delivery date the first time), see the computed manufacture start date, and browse a sortable overall or per-project schedule with current status and delay flags -- fully independent of the main Scheduler once its own record is saved.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0e161a",
+  "theme_color": "#0e161a",
+  "icons": [
+    {
+      "src": "icons/icon-192.png?v=v1",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png?v=v1",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-192-maskable.png?v=v1",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icons/icon-512-maskable.png?v=v1",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

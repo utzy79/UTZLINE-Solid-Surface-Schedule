@@ -1,0 +1,3046 @@
+<!doctype html>
+<!--
+  UTZLINE Solid Surface Schedule -- a NEW, SEPARATE, standalone app in the
+  UTZLINE family, forked from UTZLINE Scheduler (v12, the day its plan
+  viewer's stray SVG viewBox was fixed -- see that app's own history for
+  the fix, carried over unchanged here) and then re-scoped and relabeled.
+  Requested directly by Andrew (2026-09-23), verbatim:
+
+    "we will also add a Solid Surface schedule that is a separate app. so
+    when putting on the joinery item we can have a tick box for has Solid
+    Surface. this then puts it on its own schedule. this schedule pulls
+    its site delivery date from the main schedule, but could be
+    independant if required (might need to go to site later)."
+
+  Confirmed follow-up decision (2026-09-23): this app is a FULL clone of
+  UTZLINE Scheduler's own screens and logic -- its own manufacture
+  lead-time field, its own computed manufacture-start-date/delay-flag
+  logic (computeDelayInfo, subtractBusinessDays), fully independent of the
+  main Scheduler's own dates once a record of its own exists. "Pulls from
+  the main schedule" means ONLY this: when the Set Schedule dialog opens
+  for an item that has NO solid-surface-schedule.json record of its own
+  yet, the Required Delivery Date field is pre-filled from that same
+  item's OWN record in the MAIN Scheduler's joinery-schedule.json (a
+  read-only cross-file reference, see readMainJoinerySchedule below) as a
+  one-time convenience starting point -- the Manufacture Lead Time field
+  is NOT pulled across (it stays at this app's own DEFAULT_LEAD_TIME_DAYS,
+  since solid-surface lead times may genuinely differ from carcase/
+  joinery lead times and there's no reason to assume they match). The
+  moment a Solid Surface record is saved for that item, it is fully
+  independent -- reopening the dialog after that always shows THIS app's
+  own saved values, never re-pulling from the main schedule again, even if
+  the main schedule's own date later changes.
+
+  SCOPE: this app only ever shows items where joinery-items.json's own
+  `hasSolidSurface` field (owned/written exclusively by UTZLINE Projects,
+  read-only here) is === true. An item without that flag never appears in
+  the Overall table, a per-project table, or as an actionable marker on
+  the plan viewer here -- see filterSolidSurfaceItems below for the table
+  scoping, and the marker-tagging in openPlanCanvasForLevel/
+  onPlanRightClickOrLongPress for the plan-viewer scoping (out-of-scope
+  markers are still drawn, muted, for plan-navigation context, but tapping
+  one shows a "not flagged for Solid Surface" toast instead of opening the
+  Set Schedule dialog -- see the plan-canvas section below for why muted-
+  not-hidden was the chosen tradeoff).
+
+  This app never touches the main Scheduler's own joinery-schedule.json
+  except that one read-only cross-reference on first-time prefill, and it
+  never touches UTZLINE Machine Schedule's own machining-flags.json except
+  an optional, entirely read-only display of that item's own Solid Surface
+  cut state (see readMachiningFlags below) -- neither file is ever written
+  by this app.
+
+  Like UTZLINE Scheduler itself (and Install ITP / Manufacture ITP /
+  Projects before it), this is NOT built from source.html -- it is its
+  own small, purpose-built codebase, forked wholesale from Scheduler's own
+  index.html rather than written from scratch, since the two apps need to
+  behave identically apart from the scoping/prefill/branding differences
+  documented in this comment.
+
+  ============================================================
+  BELOW THIS POINT is UTZLINE Scheduler's own original top-of-file
+  comment, LEFT IN PLACE (not deleted) because everything it documents --
+  the identity system, the plan viewer's fixes, the status-history popup,
+  the post-delivery delay-outcome logic, the disclosed business-day-math
+  and legacy-plan-fallback limitations -- is inherited unchanged by this
+  fork. Only the paths/filenames it names for THIS app's own data (the
+  schedule file this app owns) have been corrected just below in the
+  "DATA IT OWNS" section for this app's own solid-surface-schedule.json,
+  everything else in the original comment describes behavior that still
+  applies verbatim.
+  ============================================================
+
+  [ORIGINAL UTZLINE SCHEDULER COMMENT FOLLOWS]
+
+  UTZLINE Scheduler -- a NEW, SEPARATE, standalone app in the UTZLINE
+  family. Requested directly by Andrew (2026-09-23):
+
+    "now create a schedular app (seperate) that runs off all this info.
+    it has a page thats a sortable overall schedule and also project
+    specific viewable shcedules, but the dates are set by right clicking
+    on your joinery plan in the scheduler and adding a required delivery
+    date, and a manufacture lead time in business days (defaults to 30
+    days), this gives a manufacture start date that is the delivery date
+    - the manufacture lead time. It creates a sortable database similar
+    to the joinery register (attached photo). It also shows the current
+    status and flags any delays.
+    Do not change any other apps. they are all working, just build the
+    standalone scheduler"
+
+  Like Install ITP / Manufacture ITP / Projects, this is NOT built from
+  source.html -- it's its own small, purpose-built codebase, since it
+  needs a different kind of screen (sortable schedule tables + a
+  lightweight read-only plan viewer), not a drawing canvas.
+
+  DATA IT READS (same Projects-root folder every other app uses, strictly
+  READ-ONLY against every one of these -- THIS FORK never writes into a
+  file another app owns, and that now explicitly includes the main
+  Scheduler's own joinery-schedule.json, see below):
+    <Projects root>/<Project>/
+      joinery-items.json                          <- {joineryId, description, level, room, status, hasSolidSurface} records (hasSolidSurface added 2026-09-23 by UTZLINE Projects; this app filters every table/plan-marker to hasSolidSurface===true only, see filterSolidSurfaceItems)
+      joinery-status.json                         <- the shared, forward-only status pipeline (rank/label/icon copied verbatim below, read-only)
+      joinery-schedule.json                       <- the MAIN Scheduler's own schedule file, read-only, ONLY for the one-time Required Delivery Date prefill described in the top-of-file summary above (readMainJoinerySchedule) -- never written here, never re-read once this app's own record exists for that item
+      machining-flags.json                        <- UTZLINE Machine Schedule's own per-item cut-tracking file, read-only, purely to show that item's Solid Surface cut state as an extra reference column (readMachiningFlags) -- optional/best-effort, never written here
+      Project Saves/Floor Plans/<Project> - <Level>.json   <- floor plan image + `markers` (roomlink objects), for the plan viewer
+
+  DATA IT OWNS (the only thing this app ever writes):
+    <Projects root>/<Project>/solid-surface-schedule.json   <- THIS APP'S OWN
+      schedule file (a sibling of, and never the same file as, the main
+      Scheduler's joinery-schedule.json) -- one record per scheduled Solid
+      Surface item, identical shape to joinery-schedule.json's own records:
+      { level, room, joineryId, requiredDeliveryDate ("YYYY-MM-DD"),
+        manufactureLeadTimeDays (int, default 30 -- this app's OWN default,
+        set independently of the main schedule's own lead time), manufactureStartDate
+        ("YYYY-MM-DD", computed = requiredDeliveryDate minus
+        manufactureLeadTimeDays business days), updatedAt (ISO string),
+        setBy (whoever was signed in via the identity selector when this
+        was saved, or "" if nobody was -- read-only informational
+        attribution; never gates or validates anything) }
+    <Projects root>/utzline-users.csv   <- shared name+PIN identity registry
+      (added 2026-09-23, see the identity-row comment on the Home screen
+      below) -- SIBLING of every Project folder, not inside one; the SAME
+      file every app in the UTZLINE family reads and writes.
+    Matched to a joinery-items.json record by the exact (level, room,
+    joineryId) triple -- the SAME identity joinery-status.json already
+    uses (findJoineryStatus), not a new matching scheme.
+
+  SHARED NAME+PIN IDENTITY (added 2026-09-23) -- Andrew's follow-up,
+  verbatim: "implement the username as per the delivery itp throughout the
+  entire system, but instead of it opening a popup, the button is the
+  selector, when you pick a name it opens a numberpad to input the pin (4
+  digit pin)." This app had no identity/name feature of its own at all
+  before this -- it's added here from scratch, copied verbatim from
+  UTZLINE Delivery ITP's own reference implementation of this exact
+  pattern (its index.html has the full design/rationale). The
+  <select id="identitySelector"> on the Home screen IS the button -- its
+  own native dropdown lists every known name plus "+ Add a new name...",
+  and choosing one immediately opens the numberpad modal (a real
+  on-screen 0-9 keypad, not a text field) to verify its PIN. It reads/
+  writes the same "utzline-identity" IndexedDB and the same
+  <ProjectsRoot>/utzline-users.csv registry every sibling UTZLINE app now
+  shares -- a name set in any of them shows up in all of them. As a small,
+  disclosed enhancement while wiring this in, each schedule record (in
+  THIS app, solid-surface-schedule.json) now also stamps `setBy` with
+  whoever was signed in when Save was pressed (see the Set Schedule
+  modal's own Save handler) -- purely informational, it changes no
+  existing gating or behavior.
+
+  KNOWN, DISCLOSED LIMITATIONS (consistent with how this ecosystem has
+  handled the same gaps elsewhere):
+  - Business-day math (subtractBusinessDays below) skips Saturdays/Sundays
+    only -- no public-holiday calendar exists anywhere in this ecosystem,
+    so a lead time that spans a holiday will be a little optimistic.
+  - The plan viewer reads a Level's markers from its Floor Plans/<Level>.json
+    file, falling back to the legacy per-Level-folder shape
+    (<Level>/saves/<Level>.utzline.json) if the flat one doesn't exist or
+    has no image yet (added 2026-09-23, matching every ITP app's own
+    dual-path plan loader -- Andrew reported "floorplan does not load into
+    scheduler" and this flat-only assumption, which turned out to be wrong
+    in practice, was the cause). A genuinely brand-new project with no plan
+    saved anywhere yet still shows "No saved plan found for this level yet."
+  - Fixed the SAME day (2026-09-23), and just as important: the level-plan
+    picker's own list of levels (listExistingLevels) used to be built
+    purely from that flat Floor Plans directory too, via the old
+    listLevelFiles() -- so a fully legacy-shaped project (no "Project
+    Saves" folder at all, which describes most of Andrew's real,
+    not-yet-migrated projects) never even offered a level to pick in the
+    dropdown, meaning the flat/legacy fallback above never got a chance to
+    run. listExistingLevels now detects the project's shape once
+    (isFlatProject, same helper UTZLINE Projects and every ITP app already
+    use) and either reads the flat files' own `name` fields or lists the
+    project's own subfolders directly (excluding the same reserved
+    project-wide folders -- itp-install/itp-manufacture/itp-delivery/the
+    old "itp" name/"Project Saves" itself -- every sibling app already
+    excludes from its own level list, so none of them is ever mistaken for
+    an openable level).
+  - Andrew also separately reported markers rendering as unlabeled bare
+    dots: planRenderMarkers() used to only draw a label when a marker's own
+    saved label.text field was truthy, but this family's label-text
+    convention (roomlinkDisplayText, shared with Site Measure/Viewer/every
+    ITP app) computes the label fresh from joineryCode/roomName instead of
+    storing it -- so plenty of real markers had no stored label.text at
+    all. Fixed the same day: every roomlink marker's label is now always
+    computed via roomlinkDisplayText and rendered with a white halo behind
+    it for legibility over any plan image, matching Install ITP's own
+    buildPlanMarkerEl. A marker with hidden:true is still excluded from
+    rendering entirely, same as before.
+  - Same (level, room, joineryId) collision caveat already documented
+    against joinery-status.json elsewhere in this family: if two items
+    ever collide on that exact triple, this app treats them as one, same
+    as the Joinery Register's own status lookup already does.
+
+  Accent color for THIS FORK is indigo (#4f5fe0) -- the one hue not
+  already used by any sibling app (Site Measure/Viewer orange-red, Install
+  ITP green, Manufacture ITP purple, Delivery ITP amber, Projects crimson,
+  the main Scheduler blue, Machine Schedule teal/cyan). The original
+  Scheduler's own blue/teal (#1f8fbf) note below is left for the historical
+  record only and no longer describes this app's own color.
+
+  STATUS-HISTORY HOVER POPUP + ACTUAL DELIVERY DATE (added 2026-09-23).
+  Andrew: "scheduler status should have the same tracking on hover like the
+  attached photo from the projects app. and delivery column should have
+  scheduled delivery and actual delivery dates." Both the Overall Schedule
+  and per-project Schedule tables' Status column now hovers/taps open the
+  exact same status-history popup as UTZLINE Projects' own Joinery Register
+  (joineryStatusHistoryFor/showStatusHistoryPop/hideStatusHistoryPop below
+  are a verbatim port of that app's own functions, reading this app's
+  already-loaded joinery-status.json list rather than re-fetching it). The
+  "Required delivery" column is relabelled "Scheduled delivery" (same field,
+  same sort key -- only the header text changed, to read correctly now that
+  it sits beside a new "Actual delivery" column), and that new column shows
+  the "delivered" stage's own history timestamp when the item's reached it
+  (blank em-dash otherwise, same as every other unset-date cell in this
+  table) -- read-only, straight from joinery-status.json, never computed or
+  stored by this app.
+
+  POST-DELIVERY DELAY OUTCOME (added 2026-09-23, same day as the above).
+  Andrew: "once an item is dispatched, the delay column changes in the
+  scheduler, (this could read Delivered early / Delivered late / Delivered
+  on time (on time would be 2 days either side)." computeDelayInfo now
+  takes the item's own actual "delivered"-stage timestamp as a 4th
+  argument: once an item has genuinely reached "delivered" or later status
+  AND has that real timestamp on record, the Delay column stops showing
+  the earlier before-the-fact framing ("Delivery overdue"/"On track") and
+  instead compares the real delivered date against the required delivery
+  date -- "Delivered late" (more than 2 days after), "Delivered early"
+  (more than 2 days before), or "Delivered on time" (within that 2-day
+  window either side, inclusive). An item that reached "installed" without
+  ever passing through a "delivered" history entry (a real path -- Andrew
+  can sign an item off in Install ITP even if Delivery ITP's own checklist
+  was skipped for it) has no actual delivered timestamp to compare, so it
+  still falls through to the unchanged pre-existing before-the-fact rules.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>UTZLINE Solid Surface Schedule</title>
+<meta name="theme-color" content="#0e161a">
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icons/icon-192.png">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<style>
+  :root{
+    --bg: #0e161a;
+    --panel: #142027;
+    --panel2: #1a2830;
+    --border: #263a44;
+    --text: #eaf3f6;
+    --muted: #9db3bc;
+    --muted2: #6f8b96;
+    --accent: #4f5fe0;
+    --accent-ink: #ffffff;
+    --accent-soft: #1c2150;
+    --danger: #ff5d5d;
+    --warn: #e0a12c;
+    --ok: #33c46a;
+    --radius: 12px;
+  }
+  *{ box-sizing: border-box; }
+  html, body{ height: 100%; }
+  body{
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, "IBM Plex Sans", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+  }
+  header{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    background: #101a1f;
+    flex: 0 0 auto;
+  }
+  header img{ width: 32px; height: 32px; border-radius: 8px; }
+  header .brand{ font-weight: 700; font-size: 17px; letter-spacing: 0.2px; }
+  header .brand small{ display:block; font-weight: 500; font-size: 11px; color: var(--muted); letter-spacing: 0.5px; }
+  main{
+    flex: 1 1 auto;
+    overflow-y: auto;
+    display: flex;
+    justify-content: center;
+    padding: 24px 16px 60px;
+  }
+  .screen{ width: 100%; max-width: 980px; }
+  .screen[hidden]{ display: none; }
+  .screen.narrow{ max-width: 640px; }
+  /* Full-width table screens (2026-09-23): Andrew, verbatim -- "Where there
+     is a table it needs to open the full width of the screen. To minimise
+     scrolling." The Overall Schedule and per-project Schedule tables both
+     force a 900px min-width today (.sched-table) that this 980px .screen
+     cap leaves little room for once main's own side padding and the card's
+     own padding are subtracted -- full-width removes that squeeze on most
+     viewports. Same override pattern UTZLINE Projects' own Register/Rework
+     Register screens use. */
+  .screen.wide-table{ max-width: none; }
+  h1{ font-size: 20px; margin: 0 0 6px; }
+  p.sub{ color: var(--muted); margin: 0 0 20px; font-size: 14px; line-height: 1.5; }
+  .card{
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+    margin-bottom: 14px;
+  }
+  .btn{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    border: none;
+    border-radius: 10px;
+    padding: 11px 18px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .btn:hover{ filter: brightness(1.1); }
+  .btn.secondary{
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn.secondary:hover{ background: var(--panel2); }
+  .btn.link{
+    background: transparent;
+    color: var(--muted);
+    border: none;
+    padding: 6px 0;
+    font-size: 13px;
+    text-decoration: underline;
+  }
+  .btn.danger{ background: var(--danger); color: #fff; }
+  .btn.sm{ padding: 6px 10px; font-size: 12px; border-radius: 8px; }
+  .row{ display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .backrow{ margin-bottom: 16px; }
+  .list{ display: flex; flex-direction: column; gap: 8px; }
+  .list-item{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 13px 16px;
+    cursor: pointer;
+    text-align: left;
+    color: var(--text);
+    font-size: 15px;
+    width: 100%;
+  }
+  .list-item:hover{ background: var(--panel2); border-color: var(--accent); }
+  .list-item .chev{ color: var(--muted2); }
+  .empty-note{ color: var(--muted); font-size: 14px; padding: 18px 4px; text-align: center; }
+  .section-title{ font-size: 15px; margin: 0 0 8px; }
+  .hero-card{
+    background: linear-gradient(135deg, var(--accent-soft), var(--panel));
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 18px;
+    display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+  }
+  .hero-card h2{ margin: 0 0 4px; font-size: 17px; }
+  .hero-card p{ margin: 0; color: var(--muted); font-size: 13px; max-width: 460px; }
+
+  .field{ margin-bottom: 14px; }
+  .field label{ display:block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+  .field input[type=text], .field input[type=date], .field input[type=number], .field select{
+    width: 100%;
+    background: #0e161a;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 10px 12px;
+    font-size: 14px;
+  }
+  .field input:focus, .field select:focus{ outline: none; border-color: var(--accent); }
+  .field .hint{ font-size: 11px; color: var(--muted2); margin-top: 4px; }
+  .field-row{ display: flex; gap: 12px; flex-wrap: wrap; }
+  .field-row .field{ flex: 1 1 180px; }
+
+  .modal-backdrop{
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 40;
+    padding: 16px;
+  }
+  .modal-backdrop[hidden]{ display: none; }
+  .modal{
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    width: 100%;
+    max-width: 460px;
+    max-height: 88vh;
+    overflow-y: auto;
+  }
+  .modal h2{ margin: 0 0 4px; font-size: 17px; }
+  .modal p.sub{ margin-bottom: 16px; }
+  .modal-actions{ display:flex; justify-content:space-between; align-items:center; gap: 10px; margin-top: 6px; }
+  .modal-actions .right{ display:flex; gap:10px; }
+  .computed-box{
+    background: #0e161a; border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; font-size: 14px; margin-bottom: 14px;
+  }
+  .computed-box .k{ color: var(--muted); font-size: 11px; display:block; margin-bottom: 3px; }
+  .computed-box .v{ font-weight: 700; font-size: 16px; }
+
+  /* ---- shared per-device name+PIN identity (2026-09-23, see boot-time comment) ---- */
+  .identity-row{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+  .identity-text{ font-size:12px; color:var(--muted); max-width:520px; }
+  .identity-select{ max-width:190px; }
+  @keyframes numberpadShake{ 10%,90%{transform:translateX(-1px);} 20%,80%{transform:translateX(2px);} 30%,50%,70%{transform:translateX(-5px);} 40%,60%{transform:translateX(5px);} }
+  .numberpad-shake{ animation:numberpadShake .4s; }
+
+  /* filters bar */
+  .filters-bar{ display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  .filters-bar select, .filters-bar input[type=text]{
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); padding: 8px 10px; font-size: 13px;
+  }
+  .filters-bar input[type=text]{ min-width: 180px; flex: 1 1 180px; }
+
+  /* schedule tables */
+  .table-scroll{ overflow-x: auto; }
+  .sched-table{ width: 100%; border-collapse: collapse; font-size: 13px; min-width: 900px; }
+  .sched-table th{
+    text-align: left; padding: 8px 10px; color: var(--muted); font-weight: 600;
+    border-bottom: 1px solid var(--border); cursor: pointer; user-select: none;
+    white-space: nowrap;
+  }
+  .sched-table th:hover{ color: var(--text); }
+  .sched-table th.sorted::after{ content: " \25B2"; font-size: 10px; }
+  .sched-table th.sorted.desc::after{ content: " \25BC"; }
+  .sched-table td{ padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; white-space: nowrap; }
+  .sched-table td.wrap{ white-space: normal; }
+  .sched-table tbody tr:last-child td{ border-bottom: none; }
+  .sched-table tbody tr:hover{ background: var(--panel2); }
+  .status-label{ display: inline-flex; align-items: center; gap: 6px; }
+  .status-label .status-icon{ font-size: 13px; }
+  .muted-cell{ color: var(--muted2); }
+  .delay-pill{
+    display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700;
+  }
+  .delay-none{ background: #26333a; color: var(--muted); }
+  .delay-ontrack{ background: rgba(51,196,106,0.16); color: var(--ok); }
+  .delay-start{ background: rgba(224,161,44,0.18); color: var(--warn); }
+  .delay-delivery{ background: rgba(255,93,93,0.18); color: var(--danger); }
+  /* ---- Post-delivery outcome pills (2026-09-23) -- "once an item is
+       dispatched, the delay column changes... Delivered early / Delivered
+       late / Delivered on time". Early and on-time both read as good-news
+       green (Andrew only asked to distinguish them from "late", not from
+       each other); late reuses the same danger red as "Delivery overdue"
+       since both mean the same real-world outcome (missed the date). ---- */
+  .delay-ontime{ background: rgba(51,196,106,0.16); color: var(--ok); }
+  .delay-early{ background: rgba(51,196,106,0.16); color: var(--ok); }
+  .delay-late{ background: rgba(255,93,93,0.18); color: var(--danger); }
+  .row-actions{ display: flex; gap: 6px; }
+
+  /* ---- Status-history hover popup (2026-09-23, ported from UTZLINE
+       Projects' Joinery Register -- see index.html there for the original.
+       Andrew: "scheduler status should have the same tracking on hover
+       like the attached photo from the projects app." Same markup/classes,
+       so this app's own popup looks and behaves identically. ---- */
+  .status-cell{ cursor: pointer; }
+  .status-history-pop{
+    position: fixed; z-index: 60; max-width: 300px;
+    background: #101a1f; border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 12px; font-size: 12px; color: var(--text);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4); pointer-events: none;
+    white-space: normal;
+  }
+  .status-history-pop .shp-title{ font-weight: 700; margin-bottom: 6px; }
+  .status-history-pop .shp-row{ display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; border-top: 1px solid var(--border); }
+  .status-history-pop .shp-row:first-of-type{ border-top: none; }
+  .status-history-pop .shp-status{ font-weight: 600; }
+  .status-history-pop .shp-meta{ color: var(--muted); text-align: right; white-space: nowrap; }
+  .status-history-pop .shp-empty{ color: var(--muted); }
+  /* Elapsed time between two consecutive history rows (added 2026-09-23,
+     Andrew: "these status windows to show days between each process") --
+     same styling as UTZLINE Projects' own port of this same popup. */
+  .status-history-pop .shp-gap{ color: var(--muted2); font-size: 11px; font-style: italic; text-align: center; padding: 2px 0; }
+
+  /* plan canvas (read-only) -- fixed to escape main's centered/max-width layout */
+  .plan-canvas-screen{
+    position: fixed; inset: 0; z-index: 30;
+    width: auto; max-width: none;
+    display: flex; flex-direction: column;
+    background: #070d10;
+  }
+  .plan-canvas-screen[hidden]{ display: none; }
+  .plan-canvas-topbar{
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    background: #101a1f;
+  }
+  .plan-canvas-topbar span{ font-weight: 600; font-size: 14px; }
+  /* Zoom controls -- pushed to the right of the topbar with margin-left:
+     auto so they sit clear of the title on wide screens and wrap below it
+     on narrow ones, without needing their own media query. Math/behavior
+     (clamp range, wheel/pinch handling, fit-to-view padding) mirrors
+     UTZLINE Projects' own roomlink plan canvas verbatim (see the plan
+     viewer section below); the buttons themselves reuse this app's own
+     existing .btn styles rather than Site Measure's separate zoom-bar
+     look, since Scheduler already has its own consistent button idiom. */
+  .plan-zoom-controls{ display: flex; align-items: center; gap: 6px; margin-left: auto; flex: 0 0 auto; }
+  .plan-zoom-controls .btn.sm{ padding: 6px 12px; min-width: 34px; }
+  .plan-canvas-stage{ flex: 1 1 auto; position: relative; overflow: hidden; touch-action: none; }
+  .plan-canvas-stage svg{ display: block; width: 100%; height: 100%; cursor: grab; }
+  .plan-canvas-hint{
+    flex: 0 0 auto;
+    padding: 8px 14px;
+    font-size: 11px;
+    color: var(--muted);
+    text-align: center;
+    background: #101a1f;
+    border-top: 1px solid var(--border);
+  }
+  .marker-dot{ cursor: pointer; }
+  .marker-label{ font-size: 14px; font-weight: 600; pointer-events: none; user-select: none; }
+
+  #toast{
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%) translateY(20px);
+    background: #1a2830;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s, transform 0.2s;
+    z-index: 50;
+    max-width: 90vw;
+    text-align: center;
+  }
+  #toast.show{ opacity: 1; transform: translateX(-50%) translateY(0); }
+  .error-note{ color: #ff8080; font-size: 13px; margin-top: 10px; }
+  .error-note[hidden]{ display: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <img src="./icons/icon-192.png" alt="">
+  <div class="brand">UTZLINE Solid Surface Schedule<small>Solid Surface delivery &amp; manufacture dates</small></div>
+</header>
+
+<main>
+
+  <!-- ---- Setup: no Projects root chosen yet ---- -->
+  <section id="screenSetup" class="screen narrow">
+    <h1>Choose your Projects folder</h1>
+    <p class="sub">Pick the same top-level Projects folder used by UTZLINE Site Measure, Viewer, Install ITP, Manufacture ITP, Delivery ITP, Projects, Scheduler and Machine Schedule. Solid Surface Schedule only reads their data (plus, once only per item, the main Scheduler's own delivery date as a starting-point prefill) -- the only thing it ever writes is its own new solid-surface-schedule.json file, one per project, scoped to items with "Has Solid Surface" ticked. Nothing about those apps changes.</p>
+    <button class="btn" id="chooseRootBtn">Choose Projects folder</button>
+    <p class="error-note" id="setupError" hidden></p>
+  </section>
+
+  <!-- ---- Reconnect: had a root before, permission lapsed ---- -->
+  <section id="screenReconnect" class="screen narrow">
+    <h1>Reconnect to your Projects folder</h1>
+    <p class="sub">Permission for "<span id="reconnectName"></span>" isn't active right now (this can happen after a browser restart). Reconnect to continue, or choose a different folder.</p>
+    <div class="row">
+      <button class="btn" id="reconnectBtn">Reconnect</button>
+      <button class="btn secondary" id="reconnectChooseDifferentBtn">Choose a different folder</button>
+    </div>
+  </section>
+
+  <!-- ---- Home: Overall Schedule + project list ---- -->
+  <section id="screenHome" class="screen">
+    <h1>Solid Surface Schedule</h1>
+    <p class="sub">Set required delivery dates and manufacture lead times for Solid Surface items, and see what's on track, starting late, or overdue -- across every project, or one at a time. Only items with "Has Solid Surface" ticked ever appear here.</p>
+    <div class="hero-card">
+      <div>
+        <h2>Overall Solid Surface Schedule</h2>
+        <p>Every scheduled (and unscheduled) Solid Surface joinery item, across every project, in one sortable table.</p>
+      </div>
+      <button class="btn" id="openOverallScheduleBtn">Open Overall Schedule</button>
+    </div>
+    <!-- ---- Shared per-device name+PIN identity (UTZLINE Data Standard v1, §6) ----
+         Andrew, verbatim (2026-09-23): "implement the username as per the delivery
+         itp throughout the entire system, but instead of it opening a popup, the
+         button is the selector, when you pick a name it opens a numberpad to input
+         the pin (4 digit pin)." Copied from UTZLINE Delivery ITP's own reference
+         implementation of this exact pattern -- see index.html's own top-of-file
+         comment there for the full design/rationale. The <select> IS the button:
+         its own native dropdown lists every known name plus "+ Add a new name...",
+         and choosing one immediately opens the numberpad modal further down. See
+         populateIdentitySelector(). Reads/writes the SAME "utzline-identity"
+         IndexedDB every sibling UTZLINE app already shares (same origin), and the
+         SAME <ProjectsRoot>/utzline-users.csv registry every sibling app reads and
+         writes. -->
+    <div class="identity-row">
+      <div class="identity-text" id="deviceUserNameText">Your name &amp; PIN: not set — attributed on schedules you set on this device.</div>
+      <select class="btn secondary identity-select" id="identitySelector" aria-label="Your name"></select>
+    </div>
+    <div class="section-title">Projects</div>
+    <div class="list" id="homeProjectListItems"></div>
+    <div class="empty-note" id="homeProjectListEmpty" hidden>No projects found in this folder.</div>
+    <p style="margin-top:16px;"><button class="btn link" id="chooseDifferentRootBtn">Choose a different Projects folder</button></p>
+  </section>
+
+  <!-- ---- Overall Schedule (cross-project) ---- -->
+  <section id="screenOverall" class="screen wide-table">
+    <div class="row backrow">
+      <button class="btn secondary sm" id="backFromOverallBtn">&larr; Home</button>
+      <h1 style="margin:0;">Overall Solid Surface Schedule</h1>
+    </div>
+    <div class="filters-bar">
+      <select id="overallProjectFilter"><option value="">All projects</option></select>
+      <select id="overallStatusFilter">
+        <option value="">All statuses</option>
+        <option value="__created__">Created</option>
+        <option value="measured">Check measured</option>
+        <option value="in_manufacture">In manufacture</option>
+        <option value="machined">Machined</option>
+        <option value="manufactured">Ready to dispatch</option>
+        <option value="delivered">Delivered</option>
+        <option value="installed">Installed</option>
+      </select>
+      <select id="overallDelayFilter">
+        <option value="">Any delay status</option>
+        <option value="delivery">Delivery overdue</option>
+        <option value="start">Manufacture start overdue</option>
+        <option value="ontrack">On track</option>
+        <option value="late">Delivered late</option>
+        <option value="ontime">Delivered on time</option>
+        <option value="early">Delivered early</option>
+        <option value="none">No schedule set</option>
+      </select>
+      <input type="text" id="overallSearchInput" placeholder="Search ID, description, or work order #">
+      <button class="btn secondary sm" id="refreshOverallBtn">Refresh</button>
+    </div>
+    <div class="card" id="overallLoadingCard">
+      <p class="sub" style="margin:0;">Reading every project...</p>
+    </div>
+    <div class="card table-scroll" id="overallTableCard" hidden>
+      <table class="sched-table" id="overallTable">
+        <thead>
+          <tr>
+            <th data-col="project">Project</th>
+            <th data-col="level">Level</th>
+            <th data-col="room">Room</th>
+            <th data-col="joineryId">Joinery ID</th>
+            <th data-col="description">Description</th>
+            <th data-col="workOrderNo">Work order #</th>
+            <th data-col="requiredDeliveryDate">Solid Surface delivery</th>
+            <th data-col="actualDeliveredAt">Actual delivery</th>
+            <th data-col="manufactureStartDate">SS manufacture start</th>
+            <th data-col="leadTime">SS lead time</th>
+            <th data-col="status">Status</th>
+            <th data-col="cutStatus">SS cut (Machine Sched.)</th>
+            <th data-col="delay">Delay</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="overallTableBody"></tbody>
+      </table>
+      <div class="empty-note" id="overallEmpty" hidden>No items match these filters.</div>
+      <div class="empty-note" id="overallEmptyAll" hidden>No joinery items found in any project yet.</div>
+    </div>
+  </section>
+
+  <!-- ---- Per-project Schedule ---- -->
+  <section id="screenProjectSchedule" class="screen wide-table">
+    <div class="row backrow">
+      <button class="btn secondary sm" id="backFromProjectScheduleBtn">&larr; Home</button>
+      <h1 id="projectScheduleTitle" style="margin:0;">Project</h1>
+    </div>
+    <div class="card row" id="levelPlanRow">
+      <span class="section-title" style="margin:0;">Open a level's plan:</span>
+      <select id="levelPlanSelect"></select>
+      <button class="btn secondary sm" id="openLevelPlanBtn">Open plan</button>
+      <span class="sub" style="margin:0; font-size:12px;">Click a Solid Surface marker on the plan to set its schedule (right-click/long-press also works). Non-Solid-Surface markers are shown muted for context only.</span>
+    </div>
+    <div class="filters-bar">
+      <select id="projLevelFilter"><option value="">All levels</option></select>
+      <select id="projStatusFilter">
+        <option value="">All statuses</option>
+        <option value="__created__">Created</option>
+        <option value="measured">Check measured</option>
+        <option value="in_manufacture">In manufacture</option>
+        <option value="machined">Machined</option>
+        <option value="manufactured">Ready to dispatch</option>
+        <option value="delivered">Delivered</option>
+        <option value="installed">Installed</option>
+      </select>
+      <select id="projDelayFilter">
+        <option value="">Any delay status</option>
+        <option value="delivery">Delivery overdue</option>
+        <option value="start">Manufacture start overdue</option>
+        <option value="ontrack">On track</option>
+        <option value="late">Delivered late</option>
+        <option value="ontime">Delivered on time</option>
+        <option value="early">Delivered early</option>
+        <option value="none">No schedule set</option>
+      </select>
+      <input type="text" id="projSearchInput" placeholder="Search ID, description, or work order #">
+    </div>
+    <div class="card table-scroll">
+      <table class="sched-table" id="projTable">
+        <thead>
+          <tr>
+            <th data-col="level">Level</th>
+            <th data-col="room">Room</th>
+            <th data-col="joineryId">Joinery ID</th>
+            <th data-col="description">Description</th>
+            <th data-col="workOrderNo">Work order #</th>
+            <th data-col="requiredDeliveryDate">Solid Surface delivery</th>
+            <th data-col="actualDeliveredAt">Actual delivery</th>
+            <th data-col="manufactureStartDate">SS manufacture start</th>
+            <th data-col="leadTime">SS lead time</th>
+            <th data-col="status">Status</th>
+            <th data-col="cutStatus">SS cut (Machine Sched.)</th>
+            <th data-col="delay">Delay</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="projTableBody"></tbody>
+      </table>
+      <div class="empty-note" id="projEmpty" hidden>No items match these filters.</div>
+      <div class="empty-note" id="projEmptyAll" hidden>No joinery items in this project yet.</div>
+    </div>
+  </section>
+
+  <!-- ---- Status-history hover popup (2026-09-23): "if you hover over a
+       joinery item on this page, it gives you a list of all the status
+       changes for that joinery item, dates and who changed it" -- ported
+       verbatim (markup + behavior) from UTZLINE Projects' own Joinery
+       Register. See index.html's own status-cell wiring, in wireRowActions
+       below, for how it's shown/hidden. ---- -->
+  <div class="status-history-pop" id="statusHistoryPop" hidden></div>
+
+  <div id="toast"></div>
+
+</main>
+
+<!-- ---- Read-only plan canvas ---- -->
+<section id="screenPlanCanvas" class="plan-canvas-screen" hidden>
+  <div class="plan-canvas-topbar">
+    <button class="btn secondary sm" id="backFromPlanCanvasBtn">&larr; Back</button>
+    <span id="planCanvasTitle"></span>
+    <div class="plan-zoom-controls" role="group" aria-label="Plan zoom controls">
+      <button type="button" class="btn secondary sm" id="planZoomOutBtn" title="Zoom out" aria-label="Zoom out">&minus;</button>
+      <button type="button" class="btn secondary sm" id="planZoomResetBtn" title="Reset view (fit whole plan, centred)" aria-label="Reset view">&#10530; Reset view</button>
+      <button type="button" class="btn secondary sm" id="planZoomInBtn" title="Zoom in" aria-label="Zoom in">&plus;</button>
+    </div>
+  </div>
+  <div class="plan-canvas-stage" id="planCanvasStageWrap">
+    <svg id="planCanvasSvg">
+      <g id="planCanvasWorld">
+        <g id="planCanvasTiles"></g>
+        <g id="planCanvasMarkers"></g>
+      </g>
+    </svg>
+  </div>
+  <div class="plan-canvas-hint">Read-only plan. Click (or right-click, or press and hold on touch) a Solid Surface marker to set its delivery date and lead time -- muted markers aren't flagged for Solid Surface and only show a reminder toast. Drag to pan, scroll or pinch to zoom, or use the zoom/reset-view buttons above.</div>
+</section>
+
+<!-- ---- Set Schedule modal ---- -->
+<div class="modal-backdrop" id="scheduleModalBackdrop" hidden>
+  <div class="modal">
+    <h2 id="scheduleModalTitle">Set Solid Surface schedule</h2>
+    <p class="sub" id="scheduleModalSub"></p>
+    <div class="field">
+      <label for="schedDeliveryInput">Required delivery date (Solid Surface)</label>
+      <input type="date" id="schedDeliveryInput">
+      <div class="hint" id="schedDeliveryDisplay"></div>
+      <div class="hint" id="schedDeliveryPrefillNote" hidden style="color:var(--accent);">Pre-filled from the main Scheduler's own delivery date for this item, as a one-time starting point -- saving here creates an independent Solid Surface record that never syncs back.</div>
+    </div>
+    <div class="field">
+      <label for="schedLeadTimeInput">Solid Surface manufacture lead time (business days)</label>
+      <input type="number" id="schedLeadTimeInput" min="0" step="1" value="30">
+      <div class="hint">Defaults to 30 business days -- this app's own default, independent of the main Scheduler's lead time. Counts weekdays only (Mon-Fri) -- no public-holiday calendar exists in this app yet. If the required delivery date itself is a Saturday/Sunday (only possible with 0 lead time), the computed start date below is pushed forward to the following Monday.</div>
+    </div>
+    <div class="computed-box">
+      <span class="k">Computed Solid Surface manufacture start date</span>
+      <span class="v" id="schedComputedStart">--</span>
+    </div>
+    <p class="error-note" id="scheduleModalError" hidden></p>
+    <div class="modal-actions">
+      <button class="btn danger sm" id="schedClearBtn" hidden>Clear schedule</button>
+      <div class="right">
+        <button class="btn secondary" id="schedCancelBtn">Cancel</button>
+        <button class="btn" id="schedSaveBtn">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ---- Shared name+PIN identity: new-name prompt, numberpad and "show me in"
+     modals (2026-09-23) -- copied from UTZLINE Delivery ITP's own reference
+     implementation of this exact pattern (see this app's own identity-row
+     comment on the Home screen above for the full rationale). The
+     <select id="identitySelector"> above is the button itself -- choosing a
+     name opens ONLY the numberpad below (a proper on-screen 0-9 keypad, not
+     a text field) to enter/verify its 4-digit PIN. Adding a brand new name
+     still needs its name typed as text (the small prompt directly below)
+     and its "show me in" app list ticked -- only the PIN itself is
+     numberpad-only, per Andrew's own explicit split. -->
+<div class="modal-backdrop" id="namePromptBackdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="namePromptLabel" style="max-width:360px;">
+    <h2 id="namePromptLabel">New name</h2>
+    <div class="field">
+      <input type="text" id="namePromptInput" maxlength="60" autocomplete="off" autocapitalize="off" spellcheck="false">
+    </div>
+    <div class="modal-actions">
+      <div></div>
+      <div class="right">
+        <button class="btn secondary" id="namePromptCancel">Cancel</button>
+        <button class="btn" id="namePromptOk">OK</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="numberpadBackdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="numberpadTitle" style="max-width:300px; text-align:center;">
+    <h2 id="numberpadTitle" style="margin-bottom:2px;">Enter PIN</h2>
+    <p class="sub" id="numberpadSubtitle" style="margin:0 0 14px; font-size:12px;"></p>
+    <div id="numberpadDots" style="display:flex; justify-content:center; gap:14px; margin-bottom:18px;"></div>
+    <div id="numberpadGrid" style="display:grid; grid-template-columns:repeat(3,1fr); gap:9px; margin-bottom:16px;"></div>
+    <div class="modal-actions" style="justify-content:center;">
+      <button class="btn secondary" id="numberpadCancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="identityAppChecksBackdrop" hidden>
+  <div class="modal" style="max-width:320px;">
+    <h2>Show me in</h2>
+    <p class="sub" style="margin:0 0 12px; font-size:12px;">Reference only, for Andrew's own admin use -- doesn't restrict which app this name can actually sign in on.</p>
+    <div id="identityAppChecksList" style="display:flex; flex-direction:column; gap:7px; margin-bottom:14px; font-size:13px;"></div>
+    <div class="modal-actions">
+      <div></div>
+      <div class="right">
+        <button class="btn secondary" id="identityAppChecksCancel">Cancel</button>
+        <button class="btn" id="identityAppChecksSave">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ============================== toast ============================== */
+  var toastEl = document.getElementById("toast");
+  function showToast(msg, durationMs){
+    toastEl.textContent = msg;
+    toastEl.classList.add("show");
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(function(){ toastEl.classList.remove("show"); }, durationMs || 2600);
+  }
+
+  function escapeHtml(s){
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  /* ============================== own IndexedDB (session state only) ==============================
+     Own database, own name -- deliberately separate from every other app's
+     own IndexedDB ("redline-db"/"session", "utzline-projects-db", etc.),
+     same one-database-per-app pattern already established across the
+     family. Only ever holds this app's own Projects-root folder handle. */
+  var DB_NAME = "utzline-scheduler-db", STORE = "session";
+  function idbOpen(){
+    return new Promise(function(res, rej){
+      try{
+        var r = indexedDB.open(DB_NAME, 1);
+        r.onupgradeneeded = function(){ r.result.createObjectStore(STORE); };
+        r.onsuccess = function(){ res(r.result); };
+        r.onerror = function(){ rej(r.error); };
+      }catch(e){ rej(e); }
+    });
+  }
+  function idbSet(key, val){
+    return idbOpen().then(function(db){
+      return new Promise(function(res, rej){
+        var tx = db.transaction(STORE, "readwrite");
+        tx.objectStore(STORE).put(val, key);
+        tx.oncomplete = function(){ res(); };
+        tx.onerror = function(){ rej(tx.error); };
+      });
+    });
+  }
+  function idbGet(key){
+    return idbOpen().then(function(db){
+      return new Promise(function(res, rej){
+        var tx = db.transaction(STORE, "readonly");
+        var rq = tx.objectStore(STORE).get(key);
+        rq.onsuccess = function(){ res(rq.result); };
+        rq.onerror = function(){ rej(rq.error); };
+      });
+    });
+  }
+
+  /* ============================== shared per-device identity (UTZLINE Data Standard v1, §6) ==============================
+     Andrew, verbatim (2026-09-23): "implement the username as per the
+     delivery itp throughout the entire system, but instead of it opening a
+     popup, the button is the selector, when you pick a name it opens a
+     numberpad to input the pin (4 digit pin)." Copied verbatim from UTZLINE
+     Delivery ITP's own reference implementation -- a SEPARATE tiny
+     IndexedDB database from DB_NAME above, deliberately using the exact
+     same database name/store/key every sibling UTZLINE app's own copy of
+     this block uses, so a name set in ANY of them shows up in ALL of them:
+     IndexedDB is scoped per-ORIGIN, not per-page, and every UTZLINE app
+     lives on the one GitHub Pages origin. This app never needs to know
+     utzline-scheduler-db's own schema (its own Projects-root handle store
+     above) or vice versa -- just this one small shared pair. */
+  var IDENTITY_DB_NAME = "utzline-identity", IDENTITY_STORE = "kv", IDENTITY_KEY = "deviceUserName";
+  var deviceUserName = "";
+  function identityDbOpen(){
+    return new Promise(function(resolve, reject){
+      var req = indexedDB.open(IDENTITY_DB_NAME, 1);
+      req.onupgradeneeded = function(){ req.result.createObjectStore(IDENTITY_STORE); };
+      req.onsuccess = function(){ resolve(req.result); };
+      req.onerror = function(){ reject(req.error); };
+    });
+  }
+  function getDeviceUserName(){
+    return identityDbOpen().then(function(db){
+      return new Promise(function(resolve, reject){
+        var tx = db.transaction(IDENTITY_STORE, "readonly");
+        var req = tx.objectStore(IDENTITY_STORE).get(IDENTITY_KEY);
+        req.onsuccess = function(){ resolve(req.result || ""); };
+        req.onerror = function(){ reject(req.error); };
+      });
+    });
+  }
+  function setDeviceUserName(name){
+    name = String(name || "").trim();
+    return identityDbOpen().then(function(db){
+      return new Promise(function(resolve, reject){
+        var tx = db.transaction(IDENTITY_STORE, "readwrite");
+        tx.objectStore(IDENTITY_STORE).put(name, IDENTITY_KEY);
+        tx.oncomplete = function(){ resolve(name); };
+        tx.onerror = function(){ reject(tx.error); };
+      });
+    });
+  }
+  function updateDeviceUserNameText(){
+    var el = document.getElementById("deviceUserNameText");
+    if (!el) return;
+    el.textContent = deviceUserName
+      ? "Your name & PIN: " + deviceUserName + " — attributed on schedules you set on this device."
+      : "Your name & PIN: not set — attributed on schedules you set on this device.";
+  }
+  function loadDeviceUserName(){
+    return getDeviceUserName().then(function(name){
+      deviceUserName = name || "";
+      updateDeviceUserNameText();
+      populateIdentitySelector(); // in case this resolves after the root folder (order isn't guaranteed -- both are fired at boot)
+    }).catch(function(){
+      deviceUserName = "";
+      updateDeviceUserNameText();
+    });
+  }
+
+  /* ============================== folder shape / listing ==============================
+     Copied verbatim from UTZLINE Projects' own detectFolderShape/
+     listSubdirNames/isProjectShaped, so this app's Projects-root picker
+     can never quietly drift from what every other app in the family
+     already expects a "root" vs. a "project" folder to look like. */
+  function listSubdirNames(dirHandle){
+    if (!dirHandle || typeof dirHandle.values !== "function") return Promise.resolve([]);
+    var names = [];
+    var iter = dirHandle.values();
+    function step(){
+      return iter.next().then(function(res){
+        if (res.done) return names;
+        if (res.value && res.value.kind === "directory") names.push(res.value.name);
+        return step();
+      });
+    }
+    return step().then(function(list){
+      list.sort(function(a, b){ return a.localeCompare(b, undefined, { sensitivity: "base" }); });
+      return list;
+    });
+  }
+  function anySubfolderMatches(dirHandle, names, predicate, i){
+    i = i || 0;
+    if (i >= names.length) return Promise.resolve(false);
+    return dirHandle.getDirectoryHandle(names[i]).then(function(childHandle){
+      return predicate(childHandle);
+    }).catch(function(){ return false; }).then(function(matched){
+      if (matched) return true;
+      return anySubfolderMatches(dirHandle, names, predicate, i + 1);
+    });
+  }
+  function isProjectShaped(dirHandle){
+    return dirHandle.getFileHandle("project-meta.json").then(function(){ return true; }, function(){
+      return dirHandle.getFileHandle("joinery-items.json").then(function(){ return true; }, function(){
+        return dirHandle.getDirectoryHandle(projectSavesDirName()).then(function(){ return true; }, function(){ return false; });
+      });
+    });
+  }
+  function detectFolderShape(dirHandle){
+    return isProjectShaped(dirHandle).then(function(isProject){
+      if (isProject) return "project";
+      return listSubdirNames(dirHandle).then(function(names){
+        if (!names.length) return "empty";
+        return anySubfolderMatches(dirHandle, names, isProjectShaped).then(function(hasProjectChild){
+          return hasProjectChild ? "root" : "unknown";
+        });
+      });
+    });
+  }
+  function listExistingProjects(rootHandle){ return listSubdirNames(rootHandle); }
+
+  /* ============================== shared name+PIN registry (CSV) ==============================
+     Copied verbatim from UTZLINE Delivery ITP's own reference implementation
+     of Andrew's identity-selector instruction (see the identity-row comment
+     on the Home screen above). Plain CSV, header row "Name,PIN,ShowInApps",
+     one row per person -- Name as typed (matched case-insensitively +
+     trimmed for lookups), PIN in PLAIN TEXT (deliberate -- this is a
+     reference-only attribution registry, not a real access-control system,
+     and Andrew explicitly wants it plain, spreadsheet-openable and
+     file-manager-editable so he can inspect it, reset a PIN by
+     clearing/editing that cell, or delete a row to free a name for reuse,
+     all without touching any project data), ShowInApps a semicolon-
+     separated list of app codes (purely a directory field for Andrew's own
+     admin use -- it never gates or restricts anything here). Lives at the
+     PROJECTS-ROOT level (projectsRootHandle, a sibling of every individual
+     Project folder) -- the SAME shared file every app in the family
+     reads/writes. No in-app "forgot PIN" flow, by design -- recovery is
+     file-manager-only. */
+  var USERS_CSV_NAME = "utzline-users.csv";
+  var USERS_CSV_HEADER = ["Name", "PIN", "ShowInApps"];
+  // Fixed set Andrew specified, in this exact order for the checkbox list,
+  // plus one new entry, ["SolidSurfaceSchedule", "Solid Surface Schedule"],
+  // added here for this app (2026-09-23), following the same pattern
+  // UTZLINE Machine Schedule already used to add its own entry. Purely a
+  // local directory/display list for Andrew's own admin use (never read or
+  // gated on by any other app's own copy of utzline-users.csv), so this
+  // addition is scoped to THIS app's own copy of APP_CODES only -- no
+  // other sibling app's source needed to change for it.
+  var APP_CODES = [
+    ["SiteMeasure", "Site Measure"],
+    ["Viewer", "Viewer"],
+    ["InstallITP", "Install ITP"],
+    ["ManufactureITP", "Manufacture ITP"],
+    ["DeliveryITP", "Delivery ITP"],
+    ["Projects", "Projects"],
+    ["Scheduler", "Scheduler"],
+    ["SolidSurfaceSchedule", "Solid Surface Schedule"]
+  ];
+  // Small, defensive CSV parse/stringify pair (RFC 4180 minimal subset) --
+  // values here are short and simple (a name, a few digits, a short code
+  // list) but this still handles a quote/comma/newline inside a field
+  // rather than assuming it'll never happen.
+  function csvEscapeField(v){
+    v = String(v == null ? "" : v);
+    return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+  }
+  function csvStringifyRows(rows){
+    return rows.map(function(r){ return r.map(csvEscapeField).join(","); }).join("\r\n") + "\r\n";
+  }
+  function csvParseText(text){
+    var rows = [], row = [], field = "", inQuotes = false;
+    var i = 0, len = text.length;
+    while (i < len){
+      var c = text[i];
+      if (inQuotes){
+        if (c === '"'){
+          if (text[i + 1] === '"'){ field += '"'; i += 2; continue; }
+          inQuotes = false; i++; continue;
+        }
+        field += c; i++; continue;
+      }
+      if (c === '"'){ inQuotes = true; i++; continue; }
+      if (c === ','){ row.push(field); field = ""; i++; continue; }
+      if (c === '\r'){ i++; continue; }
+      if (c === '\n'){ row.push(field); rows.push(row); row = []; field = ""; i++; continue; }
+      field += c; i++;
+    }
+    if (field.length > 0 || row.length > 0){ row.push(field); rows.push(row); }
+    return rows;
+  }
+  // Always re-reads the live file -- never trusts a stale in-memory copy,
+  // since another device or another app could have changed it since this
+  // page loaded. Resolves to [] both when the file doesn't exist yet and
+  // when it's empty/unparseable, so callers never need a separate
+  // "not found" branch.
+  function readUsersCsv(){
+    if (!projectsRootHandle) return Promise.resolve([]);
+    return projectsRootHandle.getFileHandle(USERS_CSV_NAME, { create: false }).then(function(fh){
+      return fh.getFile();
+    }).then(function(file){ return file.text(); }).then(function(text){
+      var rows = csvParseText(text);
+      if (!rows.length) return [];
+      var start = (rows[0] && String(rows[0][0] || "").trim().toLowerCase() === "name") ? 1 : 0;
+      var out = [];
+      for (var i = start; i < rows.length; i++){
+        var r = rows[i];
+        if (!r || !r.length || (r.length === 1 && r[0] === "")) continue; // trailing blank line
+        out.push({ name: r[0] || "", pin: r[1] || "", showInApps: r[2] || "" });
+      }
+      return out;
+    }, function(){ return []; }); // no file yet -- not an error
+  }
+  function writeUsersCsv(rows){
+    var lines = [USERS_CSV_HEADER];
+    rows.forEach(function(r){ lines.push([r.name, r.pin, r.showInApps]); });
+    var text = csvStringifyRows(lines);
+    return projectsRootHandle.getFileHandle(USERS_CSV_NAME, { create: true }).then(function(fh){
+      return fh.createWritable();
+    }).then(function(w){ return w.write(text).then(function(){ return w.close(); }); });
+  }
+  function findUserRowCI(rows, name){
+    var n = String(name || "").trim().toLowerCase();
+    for (var i = 0; i < rows.length; i++){
+      if (String(rows[i].name || "").trim().toLowerCase() === n) return rows[i];
+    }
+    return null;
+  }
+
+  function sanitizeFileBase(name){
+    var cleaned = String(name || "")
+      .replace(/[<>:"/\\|?*\x00-\x1f]/g, "")
+      .trim()
+      .replace(/^[._]+|[._\s]+$/g, "");
+    return cleaned.slice(0, 120) || "plan";
+  }
+  // A person's name, not a filename fragment, but still stripped of
+  // filesystem-hostile characters up front since the shared
+  // utzline-users.csv registry is a plain, file-manager-editable file --
+  // same rule every sibling UTZLINE app's own copy of this helper uses.
+  function sanitizeUserName(name){
+    var cleaned = String(name || "")
+      .replace(/[<>:"/\\|?*\x00-\x1f]/g, "")
+      .trim()
+      .replace(/\s+/g, " ");
+    return cleaned.slice(0, 60);
+  }
+  function projectSavesDirName(){ return "Project Saves"; }
+  function floorPlansDirName(){ return "Floor Plans"; }
+  function getFloorPlansDir(projectHandle){
+    return projectHandle.getDirectoryHandle(projectSavesDirName(), { create: false }).then(function(psH){
+      return psH.getDirectoryHandle(floorPlansDirName(), { create: false });
+    });
+  }
+  function levelFileName(projectName, levelName){
+    return sanitizeFileBase(projectName) + " - " + sanitizeFileBase(levelName) + ".json";
+  }
+  // Read-only: this app never creates "Project Saves/Floor Plans/" itself
+  // (create:false throughout) -- a flat project with no plan saved for this
+  // particular level yet resolves null here, same as before.
+  function readLevelFileByName(projectHandle, fname){
+    return getFloorPlansDir(projectHandle).then(function(dirH){
+      return dirH.getFileHandle(fname);
+    }).then(function(fh){
+      return fh.getFile();
+    }).then(function(file){
+      return file.text();
+    }).then(function(text){
+      try{
+        var parsed = JSON.parse(text);
+        if (!parsed || typeof parsed !== "object" || !parsed.name) return null;
+        return {
+          name: parsed.name,
+          imageDataURL: parsed.imageDataURL || null,
+          imageTiles: parsed.imageTiles || null,
+          imageW: parsed.imageW || 0,
+          imageH: parsed.imageH || 0,
+          markers: Array.isArray(parsed.markers) ? parsed.markers : []
+        };
+      }catch(e){ return null; }
+    }, function(){ return null; });
+  }
+  // Legacy per-Level-folder plan reader (2026-09-23) -- Andrew, verbatim:
+  // "scheduler doesnt utilise the viewer properly. floor plan in not
+  // usable. copy the viewer platform we use in the itps for floor plans."
+  // Investigated: this app's own plan lookup only ever tried the new flat
+  // "Project Saves/Floor Plans/" shape -- unlike every ITP app (and Site
+  // Measure/Projects themselves), which fall back to the OLD per-Level-
+  // folder shape ("<project>/<Level>/saves/<Level>.utzline.json") for a
+  // project that hasn't been touched by Site Measure/Projects since the
+  // flat-structure cutover. That's almost certainly why "floorplan does
+  // not load into scheduler" was reported right before this -- most real
+  // projects are still legacy-shaped. Mirrors Install ITP's own
+  // loadLevelPlan()/levelSaveFilename() byte-for-byte in shape (not a
+  // shared module -- this app has no way to import one -- but deliberately
+  // kept in sync with that file's naming/schema so a file either app reads
+  // is read back identically).
+  function legacyLevelSaveFilename(levelName){ return sanitizeFileBase(levelName) + ".utzline.json"; }
+  function readLegacyLevelFile(projectHandle, levelName){
+    if (!projectHandle) return Promise.resolve(null);
+    return projectHandle.getDirectoryHandle(levelName, { create: false }).then(function(levelH){
+      return levelH.getDirectoryHandle("saves", { create: false });
+    }).then(function(savesH){
+      return savesH.getFileHandle(legacyLevelSaveFilename(levelName), { create: false });
+    }).then(function(fh){
+      return fh.getFile();
+    }).then(function(file){
+      return file.text();
+    }).then(function(text){
+      var parsed = null;
+      try{ parsed = JSON.parse(text); }catch(e){ parsed = null; }
+      if (!parsed || typeof parsed !== "object") return null;
+      return {
+        name: levelName,
+        imageDataURL: parsed.imageDataURL || null,
+        imageTiles: parsed.imageTiles || null,
+        imageW: parsed.imageW || 0,
+        imageH: parsed.imageH || 0,
+        markers: Array.isArray(parsed.objects) ? parsed.objects : []
+      };
+    }, function(){ return null; });
+  }
+  // Tries the flat shape first (the common case for anything touched by
+  // Site Measure/Projects since the cutover), then falls back to the
+  // legacy per-Level-folder shape -- exactly the dual-path approach every
+  // ITP app already uses. Whichever shape actually has a real image wins;
+  // a flat record with no image (an empty placeholder) still falls through
+  // to a legacy file if one exists, rather than reporting "no plan" when
+  // one is genuinely there.
+  function readLevelFile(projectHandle, projectName, levelName){
+    if (!projectHandle) return Promise.resolve(null);
+    return readLevelFileByName(projectHandle, levelFileName(projectName, levelName)).then(function(flatLevel){
+      if (flatLevel && flatLevel.imageW > 0 && flatLevel.imageH > 0 && (flatLevel.imageDataURL || (flatLevel.imageTiles && flatLevel.imageTiles.length))){
+        return flatLevel;
+      }
+      return readLegacyLevelFile(projectHandle, levelName).then(function(legacyLevel){
+        return legacyLevel || flatLevel; // prefer a real legacy plan; otherwise keep whatever the flat read gave (even if plan-less), same as before
+      });
+    });
+  }
+  function listFlatLevelNames(projectHandle){
+    return getFloorPlansDir(projectHandle).then(function(dirH){
+      var fnames = [];
+      var iter = dirH.values();
+      function step(){
+        return iter.next().then(function(res){
+          if (res.done) return fnames;
+          if (res.value && res.value.kind === "file" && /\.json$/i.test(res.value.name)) fnames.push(res.value.name);
+          return step();
+        });
+      }
+      return step();
+    }, function(){ return []; }).then(function(fnames){
+      return fnames.reduce(function(chain, fname){
+        return chain.then(function(acc){
+          return readLevelFileByName(projectHandle, fname).then(function(level){
+            if (level) acc.push(level.name);
+            return acc;
+          });
+        });
+      }, Promise.resolve([]));
+    }).then(function(names){
+      return names.sort(function(a, b){ return a.localeCompare(b, undefined, { sensitivity: "base" }); });
+    });
+  }
+  function isFlatProject(projectHandle){
+    if (!projectHandle) return Promise.resolve(false);
+    return getFloorPlansDir(projectHandle).then(function(){ return true; }, function(){ return false; });
+  }
+  // Rewritten 2026-09-23 alongside readLevelFile's own legacy fallback --
+  // this was the REAL reason the fallback never kicked in for a fully
+  // legacy-shaped project (no "Project Saves" folder at all): the level
+  // dropdown itself was only ever populated from the flat "Floor Plans"
+  // directory listing, via the old listLevelFiles(), so a legacy project
+  // never even offered its levels to pick from in the first place -- readLevelFile's
+  // fallback had no level name to be given. Mirrors UTZLINE Projects'
+  // source.html / Install ITP's own listExistingLevels() byte-for-byte in
+  // shape: detect the shape ONCE (isFlatProject), then either read the
+  // flat Floor Plans files (their own `name` field) or list this project's
+  // own subfolders directly (excluding the same reserved project-wide
+  // folders every other app in the family already excludes, so an ITP
+  // app's own working folder is never mistaken for a level someone could
+  // open a plan for).
+  function listExistingLevels(projectHandle){
+    return isFlatProject(projectHandle).then(function(flat){
+      if (flat) return listFlatLevelNames(projectHandle);
+      return listSubdirNames(projectHandle).then(function(names){
+        return names.filter(function(n){ return n !== "itp" && n !== "itp-install" && n !== "itp-manufacture" && n !== "itp-delivery" && n !== projectSavesDirName(); });
+      });
+    });
+  }
+
+  /* ============================== joinery items (read-only) ============================== */
+  function readJoineryItems(projectHandle){
+    if (!projectHandle) return Promise.resolve([]);
+    return projectHandle.getFileHandle("joinery-items.json", { create: false }).then(function(fh){
+      return fh.getFile();
+    }).then(function(file){
+      return file.text();
+    }).then(function(text){
+      try{ var arr = JSON.parse(text); return Array.isArray(arr) ? arr : []; }catch(e){ return []; }
+    }, function(){ return []; });
+  }
+
+  /* ============================== shared joinery-status pipeline (read-only) ==============================
+     Copied verbatim from UTZLINE Projects / source.html / both ITP apps.
+     This app never writes joinery-status.json -- Site Measure's own "Mark
+     as check measured", and each ITP's own checklist sign-off/open, are
+     still the only writers anywhere in the family.
+
+     UPDATED 2026-09-23, Andrew, verbatim: "Manufacture status needs to be
+     split up into 2 parts. We need a machined and a manufactured tab. All
+     traceable by user name. Machined to have its own app. Called machine
+     schedule. This is where the machinist can mark off a joinery item as
+     complete. It will add their name and date time to the system." A new
+     "machined" stage is inserted into the pipeline BETWEEN "in_manufacture"
+     and "manufactured" -- it is written exclusively by the new sibling app
+     "UTZLINE Machine Schedule" (built in parallel with this round, not part
+     of this codebase). Scheduler remains strictly read-only against
+     joinery-status.json, same as always: it never sets "machined" itself,
+     it only displays it wherever it already displays any other status
+     (labels/icons/history popup/filter dropdowns). Inserting a stage in the
+     MIDDLE of the pipeline shifts every rank number from "manufactured"
+     onward up by one (manufactured 3->4, delivered 4->5, installed 5->6) --
+     every hard-coded rank-threshold comparison in computeDelayInfo() below
+     was written against the OLD numbers and has been re-derived against
+     the new ones for the same real-world meaning (see that function's own
+     updated comment for the full reasoning). "in_manufacture" itself did
+     not move (still rank 2), so the one threshold that reads "before
+     in_manufacture" is deliberately left unchanged. */
+  function joineryStatusRank(status){
+    switch (status){
+      case "installed": return 6;
+      case "delivered": return 5;
+      case "manufactured": return 4;
+      case "machined": return 3;
+      case "in_manufacture": return 2;
+      case "measured": return 1;
+      default: return 0;
+    }
+  }
+  function joineryStatusLabel(status){
+    switch (status){
+      case "installed": return "Installed";
+      case "delivered": return "Delivered";
+      case "manufactured": return "Ready to dispatch";
+      case "machined": return "Machined";
+      case "in_manufacture": return "In manufacture";
+      case "measured": return "Check measured";
+      default: return "Created";
+    }
+  }
+  function joineryStatusIcon(status){
+    switch (status){
+      case "installed": return "🏆";
+      case "delivered": return "🚚";
+      case "manufactured": return "📦";
+      case "machined": return "⚙️";
+      case "in_manufacture": return "🏭";
+      case "measured": return "📏";
+      default: return "";
+    }
+  }
+  function readJoineryStatuses(projectHandle){
+    if (!projectHandle) return Promise.resolve([]);
+    return projectHandle.getFileHandle("joinery-status.json", { create: false }).then(function(fh){
+      return fh.getFile();
+    }).then(function(file){
+      return file.text();
+    }).then(function(text){
+      try{ var arr = JSON.parse(text); return Array.isArray(arr) ? arr : []; }catch(e){ return []; }
+    }, function(){ return []; });
+  }
+  function findJoineryStatus(list, level, room, joineryId){
+    for (var i = 0; i < list.length; i++){
+      var rec = list[i];
+      if (rec && rec.level === level && (rec.room || "") === (room || "") && (rec.joineryId || "") === (joineryId || "")) return rec;
+    }
+    return null;
+  }
+  function statusLabelHtml(statusKey){
+    var icon = joineryStatusIcon(statusKey);
+    return "<span class=\"status-label\">" + (icon ? "<span class=\"status-icon\">" + icon + "</span>" : "") + escapeHtml(joineryStatusLabel(statusKey)) + "</span>";
+  }
+
+  /* ============================== this app's OWN schedule file ==============================
+     "solid-surface-schedule.json" -- a sibling of joinery-items.json/
+     joinery-status.json AND of the main Scheduler's own joinery-schedule.json,
+     but owned exclusively by THIS app: no other app in the family reads or
+     writes it, and this app never writes joinery-schedule.json (see
+     readMainJoinerySchedule below for the one read-only cross-reference it
+     does make into that file). One record per scheduled Solid Surface item,
+     matched by the exact same (level, room, joineryId) triple
+     joinery-status.json already uses. */
+  function joineryScheduleFilename(){ return "solid-surface-schedule.json"; }
+  function readJoinerySchedule(projectHandle){
+    if (!projectHandle) return Promise.resolve([]);
+    return projectHandle.getFileHandle(joineryScheduleFilename(), { create: false }).then(function(fh){
+      return fh.getFile();
+    }).then(function(file){
+      return file.text();
+    }).then(function(text){
+      try{ var arr = JSON.parse(text); return Array.isArray(arr) ? arr : []; }catch(e){ return []; }
+    }, function(){ return []; });
+  }
+  function writeJoinerySchedule(projectHandle, list){
+    return projectHandle.getFileHandle(joineryScheduleFilename(), { create: true }).then(function(fh){
+      return fh.createWritable();
+    }).then(function(w){
+      return w.write(JSON.stringify(list)).then(function(){ return w.close(); });
+    });
+  }
+  function findScheduleRecord(list, level, room, joineryId){
+    for (var i = 0; i < list.length; i++){
+      var rec = list[i];
+      if (rec && rec.level === level && (rec.room || "") === (room || "") && (rec.joineryId || "") === (joineryId || "")) return rec;
+    }
+    return null;
+  }
+
+  /* ============================== main Scheduler's own schedule file (READ-ONLY cross-reference) ==============================
+     Andrew: "this schedule pulls its site delivery date from the main
+     schedule, but could be independant if required." The MAIN Scheduler
+     app's own file, "joinery-schedule.json" -- this app NEVER writes to
+     it (writeJoinerySchedule above only ever targets THIS app's own
+     solid-surface-schedule.json). Read only from openScheduleModal, and
+     only when this item has no solid-surface-schedule.json record of its
+     own yet -- see that function for the one-time prefill logic. */
+  function mainJoineryScheduleFilename(){ return "joinery-schedule.json"; }
+  function readMainJoinerySchedule(projectHandle){
+    if (!projectHandle) return Promise.resolve([]);
+    return projectHandle.getFileHandle(mainJoineryScheduleFilename(), { create: false }).then(function(fh){
+      return fh.getFile();
+    }).then(function(file){
+      return file.text();
+    }).then(function(text){
+      try{ var arr = JSON.parse(text); return Array.isArray(arr) ? arr : []; }catch(e){ return []; }
+    }, function(){ return []; });
+  }
+
+  /* ============================== solid-surface scoping ==============================
+     "so when putting on the joinery item we can have a tick box for has
+     Solid Surface. this then puts it on its own schedule." Every table
+     (Overall + per-project) in THIS app is filtered to joinery-items.json
+     records with hasSolidSurface === true only -- an item without that
+     flag never appears here at all. UTZLINE Projects owns that field;
+     this app only ever reads it. */
+  function filterSolidSurfaceItems(items){
+    return (items || []).filter(function(it){ return it && it.hasSolidSurface === true; });
+  }
+
+  /* ============================== Machine Schedule's own cut-tracking file (READ-ONLY, optional display) ==============================
+     UTZLINE Machine Schedule (built/reworked in parallel with this app)
+     owns "machining-flags.json", tracking a tri-state Pending/Done/N/A cut
+     per applicable cut type (Carcase/Colour board/Solid Surface) per item.
+     This is a purely optional, best-effort, READ-ONLY reference column
+     here (this app never writes this file) -- so every step below is
+     defensive: an unreadable file, a missing record, or an unexpected
+     shape for the "solidSurface" sub-field all just fall through to "" (no
+     cell content) rather than breaking the table. The exact stamp shape
+     used elsewhere in that app is {state, at, by}, but this reads either a
+     bare string state or a {state,...} object, whichever it finds. */
+  function machiningFlagsFilename(){ return "machining-flags.json"; }
+  function readMachiningFlags(projectHandle){
+    if (!projectHandle) return Promise.resolve([]);
+    return projectHandle.getFileHandle(machiningFlagsFilename(), { create: false }).then(function(fh){
+      return fh.getFile();
+    }).then(function(file){
+      return file.text();
+    }).then(function(text){
+      try{ var arr = JSON.parse(text); return Array.isArray(arr) ? arr : []; }catch(e){ return []; }
+    }, function(){ return []; });
+  }
+  function findMachiningFlagRecord(list, level, room, joineryId){
+    for (var i = 0; i < (list || []).length; i++){
+      var rec = list[i];
+      if (rec && rec.level === level && (rec.room || "") === (room || "") && (rec.joineryId || "") === (joineryId || "")) return rec;
+    }
+    return null;
+  }
+  function solidSurfaceCutLabel(rec){
+    try{
+      if (!rec) return "";
+      var v = rec.solidSurface;
+      if (v == null) return "";
+      var state = (typeof v === "string") ? v : (v && v.state);
+      if (!state) return "";
+      state = String(state).toLowerCase();
+      if (state === "done") return "Cut";
+      if (state === "na" || state === "n/a") return "N/A";
+      if (state === "pending") return "Pending";
+      return "";
+    }catch(e){ return ""; }
+  }
+
+  /* ============================== business-day date math ==============================
+     "this gives a manufacture start date that is the delivery date - the
+     manufacture lead time" (in business days). Walks back one calendar
+     day at a time, only counting Mon-Fri against the remaining lead time,
+     until it's used up -- the result always lands on a weekday. DISCLOSED
+     LIMITATION: no public-holiday calendar exists anywhere in this
+     ecosystem, so this is pure Mon-Fri math, not holiday-aware. Dates are
+     plain "YYYY-MM-DD" strings throughout (no time-of-day), so UTC is used
+     purely as a stable, DST-free calendar to walk -- it never represents
+     an actual moment in time. */
+  function isWeekendUTC(d){ var wd = d.getUTCDay(); return wd === 0 || wd === 6; }
+  function subtractBusinessDays(dateStr, days){
+    if (!dateStr) return "";
+    var d = new Date(dateStr + "T00:00:00Z");
+    if (isNaN(d.getTime())) return "";
+    var remaining = Math.max(0, parseInt(days, 10) || 0);
+    while (remaining > 0){
+      d.setUTCDate(d.getUTCDate() - 1);
+      if (!isWeekendUTC(d)) remaining--;
+    }
+    // Andrew, 2026-09-23: "if the start date is a weekend, move to the
+    // closest monday directly after" -- with a real (>0) lead time the
+    // walk-back above always lands on a weekday by construction, so this
+    // is a safety-net correction for the one case where it can't: a 0-day
+    // lead time returns the required delivery date itself unchanged, and
+    // that date can be any day the user picked, including a Sat/Sun.
+    var wd = d.getUTCDay();
+    if (wd === 6) d.setUTCDate(d.getUTCDate() + 2); // Saturday -> Monday
+    else if (wd === 0) d.setUTCDate(d.getUTCDate() + 1); // Sunday -> Monday
+    return d.toISOString().slice(0, 10);
+  }
+  // "Today", as a plain local calendar date -- this is what a delay flag
+  // should be judged against (the day the person viewing this is actually
+  // living in), not a UTC day that might already differ from it.
+  function todayDateStr(){
+    var d = new Date();
+    var mm = String(d.getMonth() + 1);
+    var dd = String(d.getDate());
+    if (mm.length < 2) mm = "0" + mm;
+    if (dd.length < 2) dd = "0" + dd;
+    return d.getFullYear() + "-" + mm + "-" + dd;
+  }
+  function formatDateDisplay(dateStr){
+    if (!dateStr) return "";
+    var d = new Date(dateStr + "T00:00:00Z");
+    if (isNaN(d.getTime())) return dateStr;
+    try{
+      // Andrew, 2026-09-23: "show both these dates like the bottom one,
+      // but with the day (ie. monday) at the start" -- weekday added as
+      // the leading token (en-US-style locale formatting already puts
+      // weekday first, comma-separated, ahead of the short month/day/year
+      // this function already produced -- e.g. "Thu, Aug 13, 2026").
+      return d.toLocaleDateString(undefined, { weekday: "short", year: "numeric", month: "short", day: "numeric", timeZone: "UTC" });
+    }catch(e){ return dateStr; }
+  }
+
+  // Whole calendar days between two "YYYY-MM-DD" (or a full ISO
+  // timestamp's own date portion) strings, aStr minus bStr -- both walked
+  // as plain UTC calendar dates, same convention as subtractBusinessDays/
+  // isWeekendUTC elsewhere in this file (a "delivered" history timestamp
+  // is a real UTC moment; slicing its own date portion off before calling
+  // this keeps every date comparison in this app on the same UTC-calendar
+  // footing rather than mixing in a moment-in-time comparison).
+  function daysBetweenDateStrs(aStr, bStr){
+    var da = new Date((aStr || "").slice(0, 10) + "T00:00:00Z");
+    var db = new Date((bStr || "").slice(0, 10) + "T00:00:00Z");
+    if (isNaN(da.getTime()) || isNaN(db.getTime())) return 0;
+    return Math.round((da.getTime() - db.getTime()) / 86400000);
+  }
+
+  /* ============================== delay flagging (disclosed design call) ==============================
+     Andrew asked only that the app "flags any delays" -- the exact rule
+     wasn't specified, so this is Claude's own design call, disclosed here
+     and in next-version-notes.md:
+       - No schedule set at all  -> "No schedule set" (neutral, not a delay)
+       - today > requiredDeliveryDate AND status not yet "installed"
+             -> "Delivery overdue" (most severe -- "delivered" is a
+                reserved-but-currently-unreachable stage in the shared
+                pipeline, same as everywhere else in this family, so
+                "installed" is treated as the real completion marker)
+       - else today > manufactureStartDate AND status not yet
+             "in_manufacture" or later -> "Manufacture start overdue"
+       - else -> "On track"
+
+     UPDATED 2026-09-23, Andrew, verbatim: "once an item is dispatched, the
+     delay column changes in the scheduler, (this could read Delivered
+     early / Delivered late / Delivered on time (on time would be 2 days
+     either side)." Once an item's actually reached "delivered" (or later)
+     AND has its own "delivered"-stage history timestamp (added this same
+     round -- see actualDeliveredAt in buildEnrichedRows), the "before the
+     fact" flags above no longer apply -- the outcome is already known, so
+     this compares the real delivered date against the required delivery
+     date instead of comparing "today" against anything:
+       - actual delivered date more than 2 days AFTER the required date
+             -> "Delivered late"
+       - actual delivered date more than 2 days BEFORE the required date
+             -> "Delivered early"
+       - within that +/-2 day window (inclusive)
+             -> "Delivered on time"
+     A record can reach "installed" (rank 6) without ever having a
+     "delivered" history entry at all -- the forward-only pipeline allows
+     jumping straight from an earlier stage to "installed" if Delivery
+     ITP's own checklist was never used for that item -- so this only takes
+     the new early/late/on-time path when an actual delivered timestamp
+     genuinely exists; otherwise it falls through to the pre-existing
+     before-the-fact rules unchanged (which is why a fully "installed" item
+     with no delivered timestamp still reads via the old rules, same as
+     before this round -- rank 6 already always passes the old
+     "delivery overdue" check regardless).
+
+     UPDATED 2026-09-23, Andrew, verbatim (see the shared-pipeline comment
+     above for the full quote): a new "machined" stage was inserted into
+     the pipeline between "in_manufacture" and "manufactured", shifting
+     "manufactured"/"delivered"/"installed" up one rank each (3/4/5 ->
+     4/5/6). This function has THREE hard-coded rank-threshold literals,
+     each re-derived below against what it's actually meant to mean --
+     NOT a blind "add 1 to everything", since only two of the three sit on
+     the shifted side of the new stage:
+       - "has this item genuinely reached delivered-or-later" (switches
+         into post-delivery early/late/on-time mode): was `rank >= 4`
+         (delivered's old rank), now `rank >= 5` (delivered's new rank).
+       - "is this item not yet installed" (the delivery-overdue exemption
+         -- installed is the real completion marker): was `rank < 5`
+         (installed's old rank), now `rank < 6` (installed's new rank).
+       - "is this item not yet in_manufacture" (the manufacture-start-
+         overdue trigger): stays `rank < 2` UNCHANGED -- in_manufacture's
+         own rank is still 2, since "machined" was inserted AFTER it, not
+         before it. An item now sitting at the new "machined" stage (rank
+         3) is >= 2, so it correctly does NOT trip this "manufacture start
+         overdue" flag (it's well past manufacture start by then) and
+         correctly falls through to "On track" (or "Delivery overdue" if
+         it's also gone past the required delivery date) -- exactly the
+         same treatment "manufactured" itself already got before this
+         round, which is the right behaviour for a mid-pipeline stage that
+         didn't exist yet when these thresholds were first written. */
+  function computeDelayInfo(scheduleRec, statusKey, todayStr, actualDeliveredAt){
+    if (!scheduleRec || !scheduleRec.requiredDeliveryDate){
+      return { key: "none", label: "No schedule set", severity: 0 };
+    }
+    var rank = joineryStatusRank(statusKey);
+    if (rank >= 5 && actualDeliveredAt){
+      var diffDays = daysBetweenDateStrs(actualDeliveredAt, scheduleRec.requiredDeliveryDate); // actual - required
+      if (diffDays > 2) return { key: "late", label: "Delivered late", severity: 3 };
+      if (diffDays < -2) return { key: "early", label: "Delivered early", severity: 0 };
+      return { key: "ontime", label: "Delivered on time", severity: 0 };
+    }
+    if (todayStr > scheduleRec.requiredDeliveryDate && rank < 6){
+      return { key: "delivery", label: "Delivery overdue", severity: 3 };
+    }
+    if (scheduleRec.manufactureStartDate && todayStr > scheduleRec.manufactureStartDate && rank < 2){
+      return { key: "start", label: "Manufacture start overdue", severity: 2 };
+    }
+    return { key: "ontrack", label: "On track", severity: 1 };
+  }
+
+  /* ============================== Status-history hover popup (2026-09-23) ==============================
+     Andrew: "scheduler status should have the same tracking on hover like
+     the attached photo from the projects app." Ported verbatim from UTZLINE
+     Projects' own Joinery Register (joineryStatusHistoryFor/
+     formatHistoryDate/showStatusHistoryPop/hideStatusHistoryPop there) --
+     same markup/classes/behavior, just reading this app's already-loaded
+     statusList instead of re-fetching it. A record that's never reached
+     "measured" or beyond has no joinery-status.json entry at all -- reads
+     as an empty list ("No status changes yet."), not an error. Opens on
+     both hover (mouse) and tap/click (touch, which has no hover), exactly
+     like Projects' own popup, and is a look-only overlay closed by moving
+     away or tapping elsewhere. */
+  function joineryStatusHistoryFor(statusList, level, room, joineryId){
+    var rec = findJoineryStatus(statusList, level, room, joineryId);
+    var hist = (rec && Array.isArray(rec.history)) ? rec.history.slice() : [];
+    hist.sort(function(a, b){ return (b.at || "").localeCompare(a.at || ""); });
+    return hist;
+  }
+  function formatHistoryDate(iso){
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return iso || "";
+    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) + " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  }
+  // Short, date-only rendering of the same ISO timestamps, for the Actual
+  // delivery column (which sits beside Scheduled delivery's own
+  // formatDateDisplay date-only cell -- the history popup above is the
+  // place to see the exact time and who changed it).
+  function formatHistoryDateOnly(iso){
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return iso || "";
+    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  }
+  // Elapsed time between two history entries (added 2026-09-23, Andrew:
+  // "these status windows to show days between each process") -- ported
+  // verbatim from UTZLINE Projects' own formatDaysBetween. Distinct from
+  // this file's own daysBetweenDateStrs (used for the Delay column's
+  // early/late/on-time math, which deliberately works on plain calendar
+  // dates) -- this one is millisecond-precision against the real history
+  // timestamps, since a "days between" figure in a popup showing exact
+  // times should reflect the exact times. newerIso is always the same
+  // moment or later than olderIso, since hist is always sorted
+  // newest-first before this is called.
+  function formatDaysBetween(newerIso, olderIso){
+    var a = new Date(newerIso), b = new Date(olderIso);
+    if (isNaN(a.getTime()) || isNaN(b.getTime())) return "";
+    var days = Math.round((a.getTime() - b.getTime()) / 86400000);
+    if (days <= 0) return "Same day";
+    return days === 1 ? "1 day" : days + " days";
+  }
+  var statusHistoryPop = document.getElementById("statusHistoryPop");
+  function hideStatusHistoryPop(){ statusHistoryPop.hidden = true; }
+  function showStatusHistoryPop(cellEl, row){
+    var hist = row.statusHistory || [];
+    var rows = hist.length
+      ? hist.map(function(h, i){
+          var rowHtml = "<div class=\"shp-row\"><span class=\"shp-status\">" + statusLabelHtml(h.status) + "</span><span class=\"shp-meta\">" + escapeHtml(formatHistoryDate(h.at)) + (h.by ? "<br>" + escapeHtml(h.by) : "") + "</span></div>";
+          var gapHtml = (i < hist.length - 1) ? "<div class=\"shp-gap\">" + escapeHtml(formatDaysBetween(h.at, hist[i + 1].at)) + "</div>" : "";
+          return rowHtml + gapHtml;
+        }).join("")
+      : "<div class=\"shp-empty\">No status changes yet.</div>";
+    statusHistoryPop.innerHTML = "<div class=\"shp-title\">" + escapeHtml(row.joineryId || "(no ID)") + "</div>" + rows;
+    statusHistoryPop.hidden = false;
+    var r = cellEl.getBoundingClientRect();
+    var top = r.bottom + 6, left = r.left;
+    var popRect = statusHistoryPop.getBoundingClientRect();
+    if (top + popRect.height > window.innerHeight) top = Math.max(6, r.top - popRect.height - 6);
+    if (left + popRect.width > window.innerWidth) left = Math.max(6, window.innerWidth - popRect.width - 6);
+    statusHistoryPop.style.top = top + "px";
+    statusHistoryPop.style.left = left + "px";
+  }
+  document.addEventListener("click", function(e){
+    if (!statusHistoryPop.hidden && !e.target.closest(".status-cell")) hideStatusHistoryPop();
+  });
+
+  /* ============================== roomlink markers / plan viewer (read-only) ==============================
+     Rendering/hit-testing logic copied verbatim from UTZLINE Projects' own
+     plan canvas (planApplyTransform/planFitToView/planClientToWorld/
+     planZoomAt/planRenderTiles/planRenderMarkers/planMarkerAt and the
+     pointer-based pan/pinch/tap handling, plus the plain-wheel-zooms
+     convention its own wheel listener already uses), so this app's own
+     plan view looks and feels identical -- this app never creates, edits,
+     or moves a marker, it only reads and displays them, then opens its own
+     Set Schedule dialog on a hit.
+
+     2026-09-23 (Andrew, verbatim): "scheduler floor plan needs the zoom
+     function, reset to centre, zoom on scroll functionality, mouse click
+     on plan to change the dates. currenty only has pan." Scroll-wheel zoom
+     and pinch-zoom were already wired up here (planZoomAt/the wheel
+     listener/the two-pointer pinch branch below, all copied from Projects
+     -- there just wasn't any visible affordance for it, and no way to
+     zoom/reset without a wheel or a second touch point). Added on top of
+     that: a small zoom control group in the topbar (zoom in/out buttons
+     using the same 1.25x/0.8x step and centre-of-viewport anchor Site
+     Measure's own zoomIn/zoomOut/zoomFit buttons in source.html use, and a
+     "Reset view" button that just re-runs planFitToView -- the same
+     fit-to-screen-centred transform the plan already opens with). Also,
+     per Andrew's 4th ask, a plain tap/click on a marker now opens the real
+     Set Schedule dialog directly (onPlanTap delegates straight to
+     onPlanRightClickOrLongPress, the exact same function/dialog the right-
+     click and long-press paths already used) instead of only showing a
+     read-only summary toast -- that "accidental-tap safety" behavior was a
+     previous disclosed design choice, and this explicit request overrides
+     it. Right-click and long-press are left working exactly as before
+     (now simply a redundant second way to reach the same dialog). */
+  function roomlinkDisplayText(obj){
+    return obj.joineryCode || obj.roomName || "";
+  }
+  var planCanvasScreen = document.getElementById("screenPlanCanvas");
+  var planCanvasSvg = document.getElementById("planCanvasSvg");
+  var planCanvasStageWrap = document.getElementById("planCanvasStageWrap");
+  var planCanvasTilesG = document.getElementById("planCanvasTiles");
+  var planCanvasMarkersG = document.getElementById("planCanvasMarkers");
+  var planCanvasTitle = document.getElementById("planCanvasTitle");
+  var backFromPlanCanvasBtn = document.getElementById("backFromPlanCanvasBtn");
+  var SVG_NS = "http://www.w3.org/2000/svg";
+  var planView = { tx: 0, ty: 0, scale: 1 };
+  var planImageW = 0, planImageH = 0;
+  var planSaved = null;
+  var planReturnScreen = "home";
+  var planActiveProjectHandle = null, planActiveProjectName = "", planActiveLevelName = "";
+
+  function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
+
+  function planApplyTransform(){
+    document.getElementById("planCanvasWorld").setAttribute("transform", "translate(" + planView.tx + " " + planView.ty + ") scale(" + planView.scale + ")");
+  }
+  function planFitToView(){
+    var w = planCanvasStageWrap.clientWidth, h = planCanvasStageWrap.clientHeight;
+    if (!planImageW || !planImageH || !w || !h) return;
+    var scale = Math.min(w / planImageW, h / planImageH) * 0.94;
+    planView.scale = scale;
+    planView.tx = (w - planImageW * scale) / 2;
+    planView.ty = (h - planImageH * scale) / 2;
+    planApplyTransform();
+  }
+  function planClientToWorld(clientX, clientY){
+    var r = planCanvasSvg.getBoundingClientRect();
+    var sx = clientX - r.left, sy = clientY - r.top;
+    return { x: (sx - planView.tx) / planView.scale, y: (sy - planView.ty) / planView.scale };
+  }
+  function planZoomAt(clientX, clientY, newScale){
+    var r = planCanvasSvg.getBoundingClientRect();
+    var sx = clientX - r.left, sy = clientY - r.top;
+    var world = { x: (sx - planView.tx) / planView.scale, y: (sy - planView.ty) / planView.scale };
+    planView.scale = clamp(newScale, 0.05, 20);
+    planView.tx = sx - world.x * planView.scale;
+    planView.ty = sy - world.y * planView.scale;
+    planApplyTransform();
+  }
+  function planRenderTiles(){
+    while (planCanvasTilesG.firstChild) planCanvasTilesG.removeChild(planCanvasTilesG.firstChild);
+    if (!planSaved) return;
+    if (planSaved.imageTiles && planSaved.imageTiles.length){
+      planSaved.imageTiles.forEach(function(t){
+        var img = document.createElementNS(SVG_NS, "image");
+        img.setAttributeNS(null, "href", t.dataUrl);
+        img.setAttribute("x", t.x); img.setAttribute("y", t.y);
+        img.setAttribute("width", t.w); img.setAttribute("height", t.h);
+        planCanvasTilesG.appendChild(img);
+      });
+    } else if (planSaved.imageDataURL){
+      var img2 = document.createElementNS(SVG_NS, "image");
+      img2.setAttributeNS(null, "href", planSaved.imageDataURL);
+      img2.setAttribute("x", 0); img2.setAttribute("y", 0);
+      img2.setAttribute("width", planImageW); img2.setAttribute("height", planImageH);
+      planCanvasTilesG.appendChild(img2);
+    }
+  }
+  // Rewritten 2026-09-23 to match Install ITP's own marker rendering (see
+  // that app's buildPlanMarkerEl) -- Andrew: "copy the viewer platform we
+  // use in the itps for floor plans." Two real bugs fixed here:
+  //   1) A label only ever rendered when the marker's OWN saved
+  //      obj.label.text was truthy -- but this app (like every ITP app)
+  //      computes the display text fresh from obj.joineryCode/obj.roomName
+  //      via roomlinkDisplayText(), which several real markers may not have
+  //      a matching stored label.text for (especially after the family-wide
+  //      "label shows only the joinery code" change). That silently drew a
+  //      bare, unlabeled dot -- useless for telling items apart on a
+  //      schedule. Now a label always renders, exactly like every ITP app.
+  //   2) No fallback label position when obj.label itself is missing --
+  //      now falls back to just below the marker (obj.y + r + 22), same as
+  //      ITP's own buildPlanMarkerEl.
+  // Also added: a white halo behind the dot (same as ITP) so a marker stays
+  // visible against a light/busy part of the plan image, and a white text
+  // stroke instead of the previous dark one for the same reason.
+  // Andrew's Solid Surface scoping rule (see filterSolidSurfaceItems/the
+  // top-of-file comment) applies to plan markers too, but rather than
+  // hiding out-of-scope markers outright (losing useful plan-navigation
+  // context -- Andrew can still see where every joinery item sits), each
+  // marker is tagged obj.__solidSurface (true/false) by openPlanCanvasForLevel
+  // before this runs, and an out-of-scope marker is drawn muted (grouped
+  // under a lower-opacity <g>, grey dot instead of the accent color) rather
+  // than fully hidden. Tapping one still works (planMarkerAt doesn't
+  // distinguish), but onPlanRightClickOrLongPress below shows a reminder
+  // toast instead of opening the Set Schedule dialog for it.
+  function planRenderMarkers(){
+    while (planCanvasMarkersG.firstChild) planCanvasMarkersG.removeChild(planCanvasMarkersG.firstChild);
+    if (!planSaved || !planSaved.objects) return;
+    planSaved.objects.forEach(function(obj){
+      if (obj.type !== "roomlink") return;
+      var r = (obj.r > 0) ? obj.r : 20;
+      var inScope = obj.__solidSurface !== false;
+
+      var g = document.createElementNS(SVG_NS, "g");
+      g.setAttribute("opacity", inScope ? "1" : "0.4");
+      if (!inScope) g.setAttribute("class", "marker-out-of-scope");
+
+      var halo = document.createElementNS(SVG_NS, "circle");
+      halo.setAttribute("cx", obj.x); halo.setAttribute("cy", obj.y); halo.setAttribute("r", r + 3);
+      halo.setAttribute("fill", "#fff"); halo.setAttribute("opacity", "0.85");
+      g.appendChild(halo);
+
+      var dot = document.createElementNS(SVG_NS, "circle");
+      dot.setAttribute("class", "marker-dot");
+      dot.setAttribute("cx", obj.x); dot.setAttribute("cy", obj.y); dot.setAttribute("r", r);
+      dot.setAttribute("fill", obj.color || (inScope ? "#4f5fe0" : "#5b6272"));
+      dot.setAttribute("stroke", "#fff"); dot.setAttribute("stroke-width", Math.max(1, r * 0.08));
+      dot.setAttribute("data-marker-id", obj.id);
+      g.appendChild(dot);
+
+      var labelX = (obj.label && typeof obj.label.x === "number") ? obj.label.x : obj.x;
+      var labelY = (obj.label && typeof obj.label.y === "number") ? obj.label.y : (obj.y + r + 22);
+      var labelFontSize = (obj.label && obj.label.fontSize) ? obj.label.fontSize : 22;
+      var text = document.createElementNS(SVG_NS, "text");
+      text.setAttribute("class", "marker-label");
+      text.setAttribute("x", labelX); text.setAttribute("y", labelY);
+      text.setAttribute("text-anchor", (obj.label && obj.label.anchor) || "middle");
+      text.setAttribute("font-size", labelFontSize);
+      text.setAttribute("font-weight", "700");
+      text.setAttribute("fill", "#1b2422");
+      text.setAttribute("paint-order", "stroke fill");
+      text.setAttribute("stroke", "#fff");
+      text.setAttribute("stroke-width", Math.max(2, Math.round(labelFontSize * 0.18)));
+      text.textContent = roomlinkDisplayText(obj);
+      g.appendChild(text);
+
+      planCanvasMarkersG.appendChild(g);
+    });
+  }
+  function planMarkerAt(worldX, worldY){
+    if (!planSaved || !planSaved.objects) return null;
+    var hitR = 28 / planView.scale;
+    var best = null, bestDist = Infinity;
+    planSaved.objects.forEach(function(obj){
+      if (obj.type !== "roomlink") return;
+      var d = Math.hypot(obj.x - worldX, obj.y - worldY);
+      if (d <= Math.max(obj.r, hitR) && d < bestDist){ best = obj; bestDist = d; }
+    });
+    return best;
+  }
+
+  var planPointers = {};
+  var planDownPoint = null, planDragMoved = false, planPinchLastDist = null;
+  // Long-press-to-schedule (touch equivalent of a desktop right-click,
+  // since a touch device has no native contextmenu gesture). 550ms, same
+  // ballpark as a typical OS long-press threshold.
+  var LONG_PRESS_MS = 550;
+  var planLongPressTimer = null, planLongPressFired = false;
+  function clearLongPressTimer(){
+    if (planLongPressTimer){ clearTimeout(planLongPressTimer); planLongPressTimer = null; }
+  }
+  planCanvasSvg.addEventListener("pointerdown", function(e){
+    planPointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+    try{ planCanvasSvg.setPointerCapture(e.pointerId); }catch(err){}
+    var n = Object.keys(planPointers).length;
+    if (n === 1){
+      planDownPoint = { x: e.clientX, y: e.clientY };
+      planDragMoved = false;
+      planLongPressFired = false;
+      clearLongPressTimer();
+      var startX = e.clientX, startY = e.clientY;
+      planLongPressTimer = setTimeout(function(){
+        if (planDragMoved) return;
+        planLongPressFired = true;
+        var world = planClientToWorld(startX, startY);
+        onPlanRightClickOrLongPress(world.x, world.y);
+      }, LONG_PRESS_MS);
+    } else {
+      planPinchLastDist = null;
+      clearLongPressTimer();
+    }
+  });
+  planCanvasSvg.addEventListener("pointermove", function(e){
+    if (!planPointers[e.pointerId]) return;
+    var prev = planPointers[e.pointerId];
+    var dx = e.clientX - prev.x, dy = e.clientY - prev.y;
+    planPointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+    var ids = Object.keys(planPointers);
+    if (ids.length === 1){
+      if (Math.abs(e.clientX - planDownPoint.x) > 4 || Math.abs(e.clientY - planDownPoint.y) > 4){
+        planDragMoved = true;
+        clearLongPressTimer();
+      }
+      planView.tx += dx; planView.ty += dy;
+      planApplyTransform();
+    } else if (ids.length === 2){
+      clearLongPressTimer();
+      var pts = ids.map(function(id){ return planPointers[id]; });
+      var dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      var mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+      if (planPinchLastDist){
+        planZoomAt(mid.x, mid.y, planView.scale * (dist / planPinchLastDist));
+      }
+      planPinchLastDist = dist;
+      planDragMoved = true;
+    }
+  });
+  function planPointerEnd(e){
+    clearLongPressTimer();
+    var wasSingleTap = Object.keys(planPointers).length === 1 && !planDragMoved && !planLongPressFired;
+    var tapClient = planDownPoint;
+    delete planPointers[e.pointerId];
+    if (Object.keys(planPointers).length < 2) planPinchLastDist = null;
+    if (wasSingleTap && tapClient){
+      var world = planClientToWorld(tapClient.x, tapClient.y);
+      onPlanTap(world.x, world.y);
+    }
+  }
+  planCanvasSvg.addEventListener("pointerup", planPointerEnd);
+  planCanvasSvg.addEventListener("pointercancel", function(e){ clearLongPressTimer(); delete planPointers[e.pointerId]; planPinchLastDist = null; });
+  planCanvasSvg.addEventListener("wheel", function(e){
+    e.preventDefault();
+    var factor = Math.pow(1.0015, -e.deltaY);
+    planZoomAt(e.clientX, e.clientY, planView.scale * factor);
+  }, { passive: false });
+  // Real right-click, for desktop -- exactly what Andrew asked for
+  // ("the dates are set by right clicking on your joinery plan").
+  planCanvasSvg.addEventListener("contextmenu", function(e){
+    e.preventDefault();
+    clearLongPressTimer();
+    var world = planClientToWorld(e.clientX, e.clientY);
+    onPlanRightClickOrLongPress(world.x, world.y);
+  });
+
+  // Zoom buttons (topbar) -- same step factors and viewport-centre anchor
+  // as Site Measure's own zoomIn/zoomOut buttons in source.html
+  // (zoomBy(1.25)/zoomBy(0.8) there), reusing planZoomAt's own clamp
+  // (0.05-20) so a button press can never exceed what wheel/pinch already
+  // allow. "Reset view" just re-runs the same planFitToView() the plan
+  // already opens with, so it always lands on a known-good, centred,
+  // whole-plan-visible transform regardless of how far pan/zoom drifted.
+  var planZoomOutBtn = document.getElementById("planZoomOutBtn");
+  var planZoomInBtn = document.getElementById("planZoomInBtn");
+  var planZoomResetBtn = document.getElementById("planZoomResetBtn");
+  function planZoomByButton(factor){
+    var r = planCanvasStageWrap.getBoundingClientRect();
+    planZoomAt(r.left + r.width / 2, r.top + r.height / 2, planView.scale * factor);
+  }
+  planZoomInBtn.addEventListener("click", function(){ planZoomByButton(1.25); });
+  planZoomOutBtn.addEventListener("click", function(){ planZoomByButton(0.8); });
+  planZoomResetBtn.addEventListener("click", function(){ planFitToView(); });
+
+  function planFindItemForMarker(hit){
+    return readJoineryItems(planActiveProjectHandle).then(function(items){
+      return items.filter(function(it){
+        return it.level === planActiveLevelName && it.room === (hit.roomName || "") && it.joineryId === (hit.joineryCode || "");
+      })[0] || null;
+    });
+  }
+  // A plain tap/click on a marker: Andrew's explicit request (2026-09-23,
+  // verbatim: "mouse click on plan to change the dates") -- open the real
+  // Set Schedule dialog directly, the exact same one right-click/long-press
+  // already opens, by delegating straight to onPlanRightClickOrLongPress.
+  // PREVIOUS behavior (kept only in this comment for the record): a plain
+  // tap used to show a read-only status/schedule summary toast instead, as
+  // a disclosed "accidental-tap safety" design choice so a stray tap could
+  // never open an edit dialog by accident. Andrew's request above
+  // explicitly overrides that default -- right-click and long-press still
+  // work exactly as before, so this is simply a second, more direct way to
+  // reach the same dialog now.
+  function onPlanTap(worldX, worldY){
+    onPlanRightClickOrLongPress(worldX, worldY);
+  }
+  function onPlanRightClickOrLongPress(worldX, worldY){
+    var hit = planMarkerAt(worldX, worldY);
+    if (!hit){ return; }
+    planFindItemForMarker(hit).then(function(item){
+      if (!item){ showToast((hit.roomName || "") + (hit.joineryCode ? " · " + hit.joineryCode : "") + " — no matching item record found."); return; }
+      // Solid Surface scoping (see filterSolidSurfaceItems/the top-of-file
+      // comment): a marker for an item that isn't flagged hasSolidSurface
+      // is still shown (muted, see planRenderMarkers) for plan-navigation
+      // context, but tapping/right-clicking/long-pressing it here must not
+      // open this app's own Set Schedule dialog for it.
+      if (item.hasSolidSurface !== true){
+        showToast((hit.roomName || "") + (hit.joineryCode ? " · " + hit.joineryCode : "") + " — not flagged for Solid Surface; nothing to schedule here.");
+        return;
+      }
+      openScheduleModal(planActiveProjectHandle, planActiveProjectName, item, function(){
+        // Re-render the plan markers (no visual change needed today, but
+        // keeps this hook ready) and, more importantly, whichever table
+        // screen we came from, so it reflects the just-saved schedule the
+        // moment the visitor navigates back.
+        if (planReturnScreen === "overall") loadOverallSchedule();
+        else if (planReturnScreen === "projectSchedule") loadProjectSchedule(planActiveProjectHandle, planActiveProjectName);
+      });
+    });
+  }
+
+  function openPlanCanvasForLevel(projectHandle, projectName, levelName, returnScreen){
+    planActiveProjectHandle = projectHandle;
+    planActiveProjectName = projectName;
+    planActiveLevelName = levelName;
+    planReturnScreen = returnScreen || "home";
+    planCanvasTitle.textContent = projectName + " — " + levelName;
+    planCanvasScreen.hidden = false;
+    return Promise.all([
+      readLevelFile(projectHandle, projectName, levelName),
+      readJoineryItems(projectHandle)
+    ]).then(function(res){
+      var level = res[0];
+      var items = res[1];
+      // Solid Surface scoping for the plan viewer (see filterSolidSurfaceItems/
+      // the top-of-file comment): tag every marker with whether its matching
+      // joinery-items.json record has hasSolidSurface===true, so
+      // planRenderMarkers can draw out-of-scope ones muted and
+      // onPlanRightClickOrLongPress can refuse to open a schedule dialog for
+      // them, without hiding them outright (kept for plan-navigation context).
+      var solidSurfaceKeys = {};
+      items.forEach(function(it){
+        if (it && it.hasSolidSurface === true){
+          solidSurfaceKeys[(it.level || "") + "\u0001" + (it.room || "") + "\u0001" + (it.joineryId || "")] = true;
+        }
+      });
+      // Same roomlink filter every ITP app already applies (type==="roomlink",
+      // not hidden, a real roomName) -- this app's own reader used to pass
+      // every saved object straight through unfiltered, so a hidden marker
+      // or a stray non-roomlink object could still render/be tappable here.
+      var markers = level ? (level.markers || []).filter(function(o){
+        return o && o.type === "roomlink" && !o.hidden && typeof o.roomName === "string" && o.roomName;
+      }) : [];
+      markers.forEach(function(m){
+        m.__solidSurface = !!solidSurfaceKeys[levelName + "\u0001" + (m.roomName || "") + "\u0001" + (m.joineryCode || "")];
+      });
+      planSaved = {
+        imageDataURL: level ? level.imageDataURL : null,
+        imageTiles: level ? level.imageTiles : null,
+        imageW: level ? level.imageW : 0,
+        imageH: level ? level.imageH : 0,
+        objects: markers.slice()
+      };
+      planImageW = planSaved.imageW || 0;
+      planImageH = planSaved.imageH || 0;
+      planRenderTiles();
+      planRenderMarkers();
+      requestAnimationFrame(function(){
+        planFitToView();
+      });
+      if (!level){
+        showToast("No saved plan found for this level yet.");
+      } else if (!planImageW || !planImageH){
+        showToast("This level has no floor plan image yet.");
+      }
+    }).catch(function(err){
+      console.error("Opening level plan failed:", err);
+      showToast("Couldn't open this level's plan.");
+    });
+  }
+  backFromPlanCanvasBtn.addEventListener("click", function(){
+    planCanvasScreen.hidden = true;
+    planSaved = null;
+    if (planReturnScreen === "overall") showScreen("overall");
+    else if (planReturnScreen === "projectSchedule") showScreen("projectSchedule");
+    else showScreen("home");
+  });
+
+  /* ============================== Set Schedule modal ============================== */
+  var scheduleModalBackdrop = document.getElementById("scheduleModalBackdrop");
+  var scheduleModalTitle = document.getElementById("scheduleModalTitle");
+  var scheduleModalSub = document.getElementById("scheduleModalSub");
+  var schedDeliveryInput = document.getElementById("schedDeliveryInput");
+  var schedLeadTimeInput = document.getElementById("schedLeadTimeInput");
+  var schedComputedStart = document.getElementById("schedComputedStart");
+  var schedDeliveryDisplay = document.getElementById("schedDeliveryDisplay");
+  var schedDeliveryPrefillNote = document.getElementById("schedDeliveryPrefillNote");
+  var scheduleModalError = document.getElementById("scheduleModalError");
+  var schedClearBtn = document.getElementById("schedClearBtn");
+  var schedCancelBtn = document.getElementById("schedCancelBtn");
+  var schedSaveBtn = document.getElementById("schedSaveBtn");
+  var DEFAULT_LEAD_TIME_DAYS = 30;
+  var scheduleModalCtx = null; // { projectHandle, projectName, item, existingRec, onSaved }
+
+  function updateComputedStartPreview(){
+    var delivery = schedDeliveryInput.value;
+    var lead = schedLeadTimeInput.value;
+    schedDeliveryDisplay.textContent = delivery ? formatDateDisplay(delivery) : "";
+    if (!delivery){ schedComputedStart.textContent = "--"; return; }
+    var start = subtractBusinessDays(delivery, lead === "" ? DEFAULT_LEAD_TIME_DAYS : lead);
+    schedComputedStart.textContent = start ? formatDateDisplay(start) : "--";
+  }
+  schedDeliveryInput.addEventListener("input", updateComputedStartPreview);
+  schedLeadTimeInput.addEventListener("input", updateComputedStartPreview);
+
+  function openScheduleModal(projectHandle, projectName, item, onSaved){
+    return readJoinerySchedule(projectHandle).then(function(list){
+      var existingRec = findScheduleRecord(list, item.level, item.room, item.joineryId);
+      // "this schedule pulls its site delivery date from the main
+      // schedule, but could be independant if required." Only when this
+      // item has NO Solid Surface record of its own yet do we look at the
+      // main Scheduler's own joinery-schedule.json (read-only) for a
+      // one-time convenience prefill of the Required Delivery Date -- the
+      // Manufacture Lead Time field is deliberately left at THIS app's own
+      // DEFAULT_LEAD_TIME_DAYS, never pulled across (see the top-of-file
+      // comment for why). Once existingRec exists, this app's own values
+      // always win and the main schedule is never consulted again.
+      var mainPrefillPromise = existingRec ? Promise.resolve(null) : readMainJoinerySchedule(projectHandle).then(function(mainList){
+        return findScheduleRecord(mainList, item.level, item.room, item.joineryId);
+      });
+      return mainPrefillPromise.then(function(mainRec){
+        var prefilledFromMain = !existingRec && !!(mainRec && mainRec.requiredDeliveryDate);
+        scheduleModalCtx = { projectHandle: projectHandle, projectName: projectName, item: item, onSaved: onSaved };
+        scheduleModalTitle.textContent = "Set Solid Surface schedule";
+        scheduleModalSub.textContent = projectName + " — " + item.level + " / " + item.room + (item.joineryId ? " / " + item.joineryId : "") + (item.description ? " — " + item.description : "") + (item.workOrderNo ? " (WO " + item.workOrderNo + ")" : "");
+        schedDeliveryInput.value = existingRec ? (existingRec.requiredDeliveryDate || "") : (prefilledFromMain ? mainRec.requiredDeliveryDate : "");
+        schedLeadTimeInput.value = existingRec && existingRec.manufactureLeadTimeDays != null ? existingRec.manufactureLeadTimeDays : DEFAULT_LEAD_TIME_DAYS;
+        schedClearBtn.hidden = !existingRec;
+        schedDeliveryPrefillNote.hidden = !prefilledFromMain;
+        scheduleModalError.hidden = true;
+        updateComputedStartPreview();
+        scheduleModalBackdrop.hidden = false;
+      });
+    });
+  }
+  function closeScheduleModal(){
+    scheduleModalBackdrop.hidden = true;
+    scheduleModalCtx = null;
+  }
+  schedCancelBtn.addEventListener("click", closeScheduleModal);
+  schedSaveBtn.addEventListener("click", function(){
+    if (!scheduleModalCtx) return;
+    var delivery = schedDeliveryInput.value;
+    if (!delivery){
+      scheduleModalError.hidden = false;
+      scheduleModalError.textContent = "A required delivery date is needed to schedule this item.";
+      return;
+    }
+    var leadRaw = schedLeadTimeInput.value;
+    var lead = leadRaw === "" ? DEFAULT_LEAD_TIME_DAYS : Math.max(0, parseInt(leadRaw, 10) || 0);
+    var start = subtractBusinessDays(delivery, lead);
+    var ctx = scheduleModalCtx;
+    readJoinerySchedule(ctx.projectHandle).then(function(list){
+      var existing = findScheduleRecord(list, ctx.item.level, ctx.item.room, ctx.item.joineryId);
+      var rec = {
+        level: ctx.item.level,
+        room: ctx.item.room,
+        joineryId: ctx.item.joineryId,
+        requiredDeliveryDate: delivery,
+        manufactureLeadTimeDays: lead,
+        manufactureStartDate: start,
+        updatedAt: new Date().toISOString(),
+        setBy: deviceUserName || "" // read-only attribution (identity feature, 2026-09-23) -- never gates or validates anything
+      };
+      if (existing){
+        list = list.map(function(r){ return r === existing ? rec : r; });
+      } else {
+        list.push(rec);
+      }
+      return writeJoinerySchedule(ctx.projectHandle, list);
+    }).then(function(){
+      showToast("Schedule saved.");
+      closeScheduleModal();
+      if (typeof ctx.onSaved === "function") ctx.onSaved();
+    }).catch(function(err){
+      console.error("Saving schedule failed:", err);
+      scheduleModalError.hidden = false;
+      scheduleModalError.textContent = "Couldn't save this schedule -- try again.";
+    });
+  });
+  schedClearBtn.addEventListener("click", function(){
+    if (!scheduleModalCtx) return;
+    var ctx = scheduleModalCtx;
+    readJoinerySchedule(ctx.projectHandle).then(function(list){
+      var next = list.filter(function(r){
+        return !(r && r.level === ctx.item.level && (r.room || "") === (ctx.item.room || "") && (r.joineryId || "") === (ctx.item.joineryId || ""));
+      });
+      return writeJoinerySchedule(ctx.projectHandle, next);
+    }).then(function(){
+      showToast("Schedule cleared.");
+      closeScheduleModal();
+      if (typeof ctx.onSaved === "function") ctx.onSaved();
+    }).catch(function(err){
+      console.error("Clearing schedule failed:", err);
+      scheduleModalError.hidden = false;
+      scheduleModalError.textContent = "Couldn't clear this schedule -- try again.";
+    });
+  });
+
+  /* ============================== generic new-name prompt (identity only) ==============================
+     A small, dedicated text-entry modal -- this app has no pre-existing
+     generic prompt() replacement to reuse, so this is purpose-built just
+     for typing a brand-new identity name (the PIN itself never goes
+     through here -- see the numberpad below, per Andrew's own explicit
+     split). Resolves the typed string, or null on Cancel/backdrop click/Esc. */
+  var namePromptBackdrop = document.getElementById("namePromptBackdrop");
+  var namePromptInput = document.getElementById("namePromptInput");
+  var namePromptOk = document.getElementById("namePromptOk");
+  var namePromptCancel = document.getElementById("namePromptCancel");
+  var namePromptResolve = null;
+  function openNamePrompt(initial){
+    namePromptInput.value = initial || "";
+    namePromptBackdrop.hidden = false;
+    namePromptInput.focus();
+    namePromptInput.select();
+    return new Promise(function(resolve){ namePromptResolve = resolve; });
+  }
+  function closeNamePrompt(value){
+    namePromptBackdrop.hidden = true;
+    var r = namePromptResolve; namePromptResolve = null;
+    if (r) r(value);
+  }
+  namePromptOk.addEventListener("click", function(){ closeNamePrompt(namePromptInput.value); });
+  namePromptCancel.addEventListener("click", function(){ closeNamePrompt(null); });
+  namePromptBackdrop.addEventListener("click", function(e){ if (e.target === namePromptBackdrop) closeNamePrompt(null); });
+  namePromptInput.addEventListener("keydown", function(e){
+    if (e.key === "Enter"){ e.preventDefault(); closeNamePrompt(namePromptInput.value); }
+    else if (e.key === "Escape"){ e.preventDefault(); closeNamePrompt(null); }
+  });
+
+  /* ---- numberpad (4-digit PIN entry) ----
+     Copied verbatim from UTZLINE Delivery ITP's own reference
+     implementation. A small, self-contained on-screen keypad modal.
+     openNumberpad(opts) returns a Promise that resolves with the 4-digit
+     string once entered (and, if opts.verify is given, only once
+     verify(pin) resolves truthy -- a wrong PIN shakes the dialog and
+     clears it for another attempt rather than closing), or resolves null
+     if the user cancels. Used for every PIN step: verifying an existing
+     name's PIN, and choosing/confirming a new one -- entering a NAME
+     (text) still goes through openNamePrompt above, only the PIN itself
+     is numberpad-only, per Andrew's own explicit split. */
+  var numberpadBackdrop = document.getElementById("numberpadBackdrop");
+  var numberpadTitleEl = document.getElementById("numberpadTitle");
+  var numberpadSubtitleEl = document.getElementById("numberpadSubtitle");
+  var numberpadDotsEl = document.getElementById("numberpadDots");
+  var numberpadGridEl = document.getElementById("numberpadGrid");
+  var numberpadCancelBtn = document.getElementById("numberpadCancel");
+  var NUMBERPAD_LENGTH = 4;
+  var numberpadState = null; // { entered:"", verify:fn|null, resolve:fn, busy:bool }
+
+  function renderNumberpadDots(){
+    numberpadDotsEl.innerHTML = "";
+    for (var i = 0; i < NUMBERPAD_LENGTH; i++){
+      var dot = document.createElement("div");
+      var filled = numberpadState && i < numberpadState.entered.length;
+      dot.style.cssText = "width:14px; height:14px; border-radius:50%; border:2px solid var(--border); background:" + (filled ? "var(--accent)" : "transparent") + "; transition:background .1s;";
+      numberpadDotsEl.appendChild(dot);
+    }
+  }
+  function numberpadShakeAndClear(){
+    var box = numberpadBackdrop.querySelector(".modal");
+    box.classList.remove("numberpad-shake");
+    void box.offsetWidth; // restart the CSS animation
+    box.classList.add("numberpad-shake");
+    showToast("Incorrect PIN — try again.");
+    setTimeout(function(){
+      if (numberpadState){ numberpadState.entered = ""; numberpadState.busy = false; renderNumberpadDots(); }
+    }, 260);
+  }
+  function finishNumberpad(pin){
+    numberpadBackdrop.hidden = true;
+    var st = numberpadState; numberpadState = null;
+    if (st && st.resolve) st.resolve(pin);
+  }
+  function cancelNumberpad(){
+    if (!numberpadState) return;
+    numberpadBackdrop.hidden = true;
+    var st = numberpadState; numberpadState = null;
+    if (st && st.resolve) st.resolve(null);
+  }
+  function numberpadPressDigit(d){
+    if (!numberpadState || numberpadState.busy || numberpadState.entered.length >= NUMBERPAD_LENGTH) return;
+    numberpadState.entered += d;
+    renderNumberpadDots();
+    if (numberpadState.entered.length === NUMBERPAD_LENGTH){
+      var pin = numberpadState.entered;
+      var verify = numberpadState.verify;
+      if (!verify){ finishNumberpad(pin); return; }
+      numberpadState.busy = true;
+      Promise.resolve(verify(pin)).then(function(ok){
+        if (!numberpadState) return; // cancelled while verifying
+        if (ok) finishNumberpad(pin);
+        else numberpadShakeAndClear();
+      }, function(){
+        if (numberpadState) numberpadShakeAndClear();
+      });
+    }
+  }
+  function numberpadBackspace(){
+    if (!numberpadState || numberpadState.busy || !numberpadState.entered.length) return;
+    numberpadState.entered = numberpadState.entered.slice(0, -1);
+    renderNumberpadDots();
+  }
+  numberpadCancelBtn.addEventListener("click", cancelNumberpad);
+  numberpadBackdrop.addEventListener("click", function(e){ if (e.target === numberpadBackdrop) cancelNumberpad(); });
+  document.addEventListener("keydown", function(e){
+    if (!numberpadState || numberpadBackdrop.hidden) return;
+    if (e.key >= "0" && e.key <= "9"){ e.preventDefault(); numberpadPressDigit(e.key); }
+    else if (e.key === "Backspace"){ e.preventDefault(); numberpadBackspace(); }
+    else if (e.key === "Escape"){ e.preventDefault(); cancelNumberpad(); }
+  });
+  (function buildNumberpadGrid(){
+    var layout = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "back"];
+    layout.forEach(function(key){
+      var cell = document.createElement("button");
+      cell.type = "button";
+      cell.style.cssText = "font-size:18px; padding:12px 0;";
+      if (key === ""){
+        cell.style.visibility = "hidden"; cell.disabled = true;
+      } else if (key === "back"){
+        cell.className = "btn secondary"; cell.textContent = "⌫"; cell.setAttribute("aria-label", "Backspace");
+        cell.addEventListener("click", numberpadBackspace);
+      } else {
+        cell.className = "btn secondary"; cell.textContent = key;
+        cell.addEventListener("click", function(){ numberpadPressDigit(key); });
+      }
+      numberpadGridEl.appendChild(cell);
+    });
+  })();
+  function openNumberpad(opts){
+    opts = opts || {};
+    numberpadTitleEl.textContent = opts.title || "Enter PIN";
+    numberpadSubtitleEl.textContent = opts.subtitle || "";
+    numberpadSubtitleEl.style.display = opts.subtitle ? "" : "none";
+    numberpadState = { entered: "", verify: opts.verify || null, busy: false };
+    renderNumberpadDots();
+    numberpadBackdrop.hidden = false;
+    return new Promise(function(resolve){ numberpadState.resolve = resolve; });
+  }
+
+  /* ---- "show me in" app-list modal (checkboxes only) ---- */
+  var identityAppChecksBackdrop = document.getElementById("identityAppChecksBackdrop");
+  var identityAppChecksList = document.getElementById("identityAppChecksList");
+  var identityAppChecksSaveBtn = document.getElementById("identityAppChecksSave");
+  var identityAppChecksCancelBtn = document.getElementById("identityAppChecksCancel");
+  var identityAppChecksResolve = null;
+  function openAppChecksModal(){
+    identityAppChecksList.innerHTML = "";
+    APP_CODES.forEach(function(pair){
+      var code = pair[0], label = pair[1];
+      var row = document.createElement("label");
+      row.style.cssText = "display:flex; align-items:center; gap:7px;";
+      var cb = document.createElement("input");
+      cb.type = "checkbox"; cb.value = code;
+      if (code === "SolidSurfaceSchedule") cb.checked = true; // pre-checked: the app they're setting this up from
+      row.appendChild(cb);
+      row.appendChild(document.createTextNode(label));
+      identityAppChecksList.appendChild(row);
+    });
+    identityAppChecksBackdrop.hidden = false;
+    return new Promise(function(resolve){ identityAppChecksResolve = resolve; });
+  }
+  function closeAppChecksModal(value){
+    identityAppChecksBackdrop.hidden = true;
+    var r = identityAppChecksResolve; identityAppChecksResolve = null;
+    if (r) r(value);
+  }
+  identityAppChecksSaveBtn.addEventListener("click", function(){
+    var checked = Array.prototype.slice.call(identityAppChecksList.querySelectorAll("input[type=checkbox]:checked")).map(function(cb){ return cb.value; });
+    closeAppChecksModal(checked);
+  });
+  identityAppChecksCancelBtn.addEventListener("click", function(){ closeAppChecksModal(null); });
+  identityAppChecksBackdrop.addEventListener("click", function(e){ if (e.target === identityAppChecksBackdrop) closeAppChecksModal(null); });
+
+  /* ---- the identity selector itself: the <select> IS the button ----
+     Andrew, verbatim (2026-09-23): "implement the username as per the
+     delivery itp throughout the entire system, but instead of it opening a
+     popup, the button is the selector, when you pick a name it opens a
+     numberpad to input the pin (4 digit pin)." Picking a name from this
+     dropdown directly triggers the numberpad; picking "+ Add a new
+     name..." starts the new-name flow (name via openNamePrompt, PIN
+     chosen+confirmed via two numberpad rounds, then the "show me in" list
+     above). */
+  var identitySelector = document.getElementById("identitySelector");
+  var IDENTITY_NEW_VALUE = "__new__";
+  var IDENTITY_PLACEHOLDER_VALUE = "__none__";
+
+  function populateIdentitySelector(){
+    if (!identitySelector) return Promise.resolve();
+    return readUsersCsv().then(function(rows){
+      var names = rows.map(function(r){ return r.name; }).filter(Boolean);
+      names.sort(function(a, b){ return a.toLowerCase().localeCompare(b.toLowerCase()); });
+      identitySelector.innerHTML = "";
+      if (!deviceUserName || names.indexOf(deviceUserName) === -1){
+        var placeholder = document.createElement("option");
+        placeholder.value = IDENTITY_PLACEHOLDER_VALUE;
+        placeholder.textContent = "Set your name";
+        identitySelector.appendChild(placeholder);
+      }
+      names.forEach(function(n){
+        var opt = document.createElement("option");
+        opt.value = n; opt.textContent = n;
+        identitySelector.appendChild(opt);
+      });
+      var addOpt = document.createElement("option");
+      addOpt.value = IDENTITY_NEW_VALUE; addOpt.textContent = "+ Add a new name…";
+      identitySelector.appendChild(addOpt);
+      identitySelector.value = (deviceUserName && names.indexOf(deviceUserName) !== -1) ? deviceUserName : IDENTITY_PLACEHOLDER_VALUE;
+    }, function(){ /* CSV not readable yet (no root folder chosen) -- leave it empty */ });
+  }
+  function revertIdentitySelector(previousValue){
+    if (!identitySelector) return;
+    var hasOpt = Array.prototype.some.call(identitySelector.options, function(o){ return o.value === previousValue; });
+    identitySelector.value = hasOpt ? previousValue : IDENTITY_PLACEHOLDER_VALUE;
+  }
+  function beginPinVerifyFlow(name, previousValue){
+    return openNumberpad({
+      title: "Enter PIN",
+      subtitle: "for “" + name + "”",
+      verify: function(pin){
+        return readUsersCsv().then(function(rows){
+          var row = findUserRowCI(rows, name);
+          return !!(row && row.pin === pin);
+        });
+      }
+    }).then(function(pin){
+      if (pin === null){ revertIdentitySelector(previousValue); return; }
+      return setDeviceUserName(name).then(function(saved){
+        deviceUserName = saved;
+        updateDeviceUserNameText();
+        showToast("Schedules you set on this device will be attributed to “" + saved + "”.");
+      });
+    }).catch(function(err){
+      console.error("Checking PIN failed:", err);
+      showToast("Couldn't read utzline-users.csv.");
+      revertIdentitySelector(previousValue);
+    });
+  }
+  function beginAddNewIdentityFlow(previousValue){
+    return openNamePrompt("").then(function(rawName){
+      if (rawName === null){ revertIdentitySelector(previousValue); return; }
+      var newName = sanitizeUserName(rawName);
+      if (!newName){ showToast("Enter a name first."); revertIdentitySelector(previousValue); return; }
+      return readUsersCsv().then(function(rows){
+        if (findUserRowCI(rows, newName)){
+          showToast("“" + newName + "” already exists — pick it from the list and enter its PIN instead.");
+          revertIdentitySelector(previousValue);
+          return;
+        }
+        return openNumberpad({ title: "Choose a 4-digit PIN", subtitle: "for “" + newName + "”" }).then(function(pin1){
+          if (pin1 === null){ revertIdentitySelector(previousValue); return; }
+          return openNumberpad({
+            title: "Confirm PIN",
+            subtitle: "for “" + newName + "”",
+            verify: function(p){ return p === pin1; }
+          }).then(function(pin2){
+            if (pin2 === null){ revertIdentitySelector(previousValue); return; }
+            return openAppChecksModal().then(function(checked){
+              if (checked === null){ revertIdentitySelector(previousValue); return; }
+              return readUsersCsv().then(function(freshRows){
+                if (findUserRowCI(freshRows, newName)){
+                  showToast("“" + newName + "” already exists now — try again and pick it from the list.");
+                  revertIdentitySelector(previousValue);
+                  return;
+                }
+                freshRows.push({ name: newName, pin: pin1, showInApps: checked.join(";") });
+                return writeUsersCsv(freshRows).then(function(){
+                  return setDeviceUserName(newName);
+                }).then(function(saved){
+                  deviceUserName = saved;
+                  updateDeviceUserNameText();
+                  return populateIdentitySelector();
+                }).then(function(){
+                  showToast("Schedules you set on this device will be attributed to “" + deviceUserName + "”.");
+                });
+              });
+            });
+          });
+        });
+      });
+    }).catch(function(err){
+      console.error("Adding a new name/PIN failed:", err);
+      showToast("Couldn't save that to utzline-users.csv.");
+      revertIdentitySelector(previousValue);
+    });
+  }
+  if (identitySelector){
+    identitySelector.addEventListener("change", function(){
+      var picked = identitySelector.value;
+      var previous = (deviceUserName && Array.prototype.some.call(identitySelector.options, function(o){ return o.value === deviceUserName; })) ? deviceUserName : IDENTITY_PLACEHOLDER_VALUE;
+      if (picked === IDENTITY_PLACEHOLDER_VALUE) return; // re-selecting the placeholder itself -- no-op
+      if (picked === IDENTITY_NEW_VALUE) beginAddNewIdentityFlow(previous);
+      else if (picked !== deviceUserName) beginPinVerifyFlow(picked, previous);
+    });
+  }
+
+  /* ============================== enriched row building (shared by both tables) ============================== */
+  function buildEnrichedRows(items, statusList, scheduleList, projectName, projectHandle, machiningFlagsList){
+    var today = todayDateStr();
+    return items.map(function(item){
+      var statusKey = (findJoineryStatus(statusList, item.level, item.room, item.joineryId) || {}).status || "";
+      var schedRec = findScheduleRecord(scheduleList, item.level, item.room, item.joineryId);
+      var statusHistory = joineryStatusHistoryFor(statusList, item.level, item.room, item.joineryId);
+      // Optional, read-only reference column (see readMachiningFlags'
+      // own comment) -- machiningFlagsList is an optional 6th argument so
+      // existing test callers that omit it still work unchanged.
+      var cutStatus = solidSurfaceCutLabel(findMachiningFlagRecord(machiningFlagsList, item.level, item.room, item.joineryId));
+      // The "delivered" stage's own history entry, if the item's ever
+      // reached it -- Andrew: "delivery column should have scheduled
+      // delivery and actual delivery dates." Forward-only pipeline never
+      // demotes and never re-fires the same stage twice, so there's at
+      // most one "delivered" entry to find; still take the newest match
+      // defensively rather than assuming array position.
+      var actualDeliveredAt = "";
+      for (var i = 0; i < statusHistory.length; i++){
+        if (statusHistory[i].status === "delivered"){ actualDeliveredAt = statusHistory[i].at; break; } // sorted newest-first already
+      }
+      // computeDelayInfo needs actualDeliveredAt (see its own comment) to
+      // decide whether the item's already been delivered and should show
+      // an early/late/on-time outcome instead of a before-the-fact flag.
+      var delay = computeDelayInfo(schedRec, statusKey, today, actualDeliveredAt);
+      return {
+        project: projectName,
+        projectHandle: projectHandle,
+        level: item.level,
+        room: item.room,
+        joineryId: item.joineryId,
+        description: item.description,
+        workOrderNo: item.workOrderNo,
+        statusKey: statusKey,
+        statusHistory: statusHistory,
+        requiredDeliveryDate: schedRec ? schedRec.requiredDeliveryDate : "",
+        actualDeliveredAt: actualDeliveredAt,
+        manufactureLeadTimeDays: schedRec ? schedRec.manufactureLeadTimeDays : null,
+        manufactureStartDate: schedRec ? schedRec.manufactureStartDate : "",
+        cutStatus: cutStatus,
+        delayKey: delay.key,
+        delayLabel: delay.label,
+        delaySeverity: delay.severity,
+        rawItem: item
+      };
+    });
+  }
+  function scheduleCompare(a, b, sort){
+    var col = sort.col;
+    var cmp;
+    if (col === "requiredDeliveryDate" || col === "manufactureStartDate" || col === "actualDeliveredAt"){
+      var av = a[col] || "", bv = b[col] || "";
+      if (!av && !bv) cmp = 0;
+      else if (!av) return 1;   // unset always sorts last, regardless of direction
+      else if (!bv) return -1;
+      else cmp = av < bv ? -1 : (av > bv ? 1 : 0);
+      return sort.dir === "desc" ? -cmp : cmp;
+    }
+    if (col === "status"){
+      cmp = joineryStatusRank(a.statusKey) - joineryStatusRank(b.statusKey);
+      return sort.dir === "desc" ? -cmp : cmp;
+    }
+    if (col === "delay"){
+      cmp = a.delaySeverity - b.delaySeverity;
+      return sort.dir === "desc" ? -cmp : cmp;
+    }
+    if (col === "leadTime"){
+      cmp = (a.manufactureLeadTimeDays == null ? -1 : a.manufactureLeadTimeDays) - (b.manufactureLeadTimeDays == null ? -1 : b.manufactureLeadTimeDays);
+      return sort.dir === "desc" ? -cmp : cmp;
+    }
+    var av2 = String(a[col] || "").toLowerCase(), bv2 = String(b[col] || "").toLowerCase();
+    cmp = av2 < bv2 ? -1 : (av2 > bv2 ? 1 : 0);
+    return sort.dir === "desc" ? -cmp : cmp;
+  }
+  function scheduleRowCells(row, showProject){
+    return (showProject ? "<td>" + escapeHtml(row.project) + "</td>" : "") +
+      "<td>" + escapeHtml(row.level) + "</td>" +
+      "<td>" + escapeHtml(row.room) + "</td>" +
+      "<td>" + escapeHtml(row.joineryId) + "</td>" +
+      "<td class=\"wrap\">" + escapeHtml(row.description) + "</td>" +
+      "<td>" + (row.workOrderNo ? escapeHtml(row.workOrderNo) : "<span class=\"muted-cell\">—</span>") + "</td>" +
+      "<td>" + (row.requiredDeliveryDate ? escapeHtml(formatDateDisplay(row.requiredDeliveryDate)) : "<span class=\"muted-cell\">—</span>") + "</td>" +
+      "<td>" + (row.actualDeliveredAt ? escapeHtml(formatHistoryDateOnly(row.actualDeliveredAt)) : "<span class=\"muted-cell\">—</span>") + "</td>" +
+      "<td>" + (row.manufactureStartDate ? escapeHtml(formatDateDisplay(row.manufactureStartDate)) : "<span class=\"muted-cell\">—</span>") + "</td>" +
+      "<td>" + (row.manufactureLeadTimeDays != null ? row.manufactureLeadTimeDays + "d" : "<span class=\"muted-cell\">—</span>") + "</td>" +
+      "<td class=\"status-cell\">" + statusLabelHtml(row.statusKey) + "</td>" +
+      "<td>" + (row.cutStatus ? escapeHtml(row.cutStatus) : "<span class=\"muted-cell\">—</span>") + "</td>" +
+      "<td><span class=\"delay-pill delay-" + row.delayKey + "\">" + escapeHtml(row.delayLabel) + "</span></td>" +
+      "<td class=\"row-actions\"><button type=\"button\" class=\"btn secondary sm view-plan-btn\">View on plan</button><button type=\"button\" class=\"btn secondary sm edit-sched-btn\">Edit schedule</button></td>";
+  }
+  function wireRowActions(tr, row, returnScreen){
+    var viewBtn = tr.querySelector(".view-plan-btn");
+    var editBtn = tr.querySelector(".edit-sched-btn");
+    viewBtn.addEventListener("click", function(){
+      openPlanCanvasForLevel(row.projectHandle, row.project, row.level, returnScreen);
+    });
+    editBtn.addEventListener("click", function(){
+      openScheduleModal(row.projectHandle, row.project, row.rawItem, function(){
+        if (returnScreen === "overall") loadOverallSchedule(); else loadProjectSchedule(row.projectHandle, row.project);
+      });
+    });
+    // Status-history hover/tap popup (2026-09-23) -- see showStatusHistoryPop
+    // above. Hover opens/closes it on desktop; a plain click/tap toggles it,
+    // since touch devices have no hover event at all -- same dual handling
+    // as UTZLINE Projects' own Joinery Register.
+    var statusCell = tr.querySelector(".status-cell");
+    if (statusCell){
+      statusCell.addEventListener("mouseenter", function(){ showStatusHistoryPop(statusCell, row); });
+      statusCell.addEventListener("mouseleave", hideStatusHistoryPop);
+      statusCell.addEventListener("click", function(e){
+        e.stopPropagation();
+        if (statusHistoryPop.hidden) showStatusHistoryPop(statusCell, row); else hideStatusHistoryPop();
+      });
+    }
+  }
+
+  /* ============================== Overall Schedule screen ============================== */
+  var overallTable = document.getElementById("overallTable");
+  var overallTableBody = document.getElementById("overallTableBody");
+  var overallTableCard = document.getElementById("overallTableCard");
+  var overallLoadingCard = document.getElementById("overallLoadingCard");
+  var overallEmpty = document.getElementById("overallEmpty");
+  var overallEmptyAll = document.getElementById("overallEmptyAll");
+  var overallProjectFilter = document.getElementById("overallProjectFilter");
+  var overallStatusFilter = document.getElementById("overallStatusFilter");
+  var overallDelayFilter = document.getElementById("overallDelayFilter");
+  var overallSearchInput = document.getElementById("overallSearchInput");
+  var overallAllRows = [];
+  var overallSort = { col: "requiredDeliveryDate", dir: "asc" };
+
+  function statusFilterMatches(filterValue, statusKey){
+    if (filterValue === "") return true; // "All statuses"
+    if (filterValue === "__created__") return statusKey === "";
+    return statusKey === filterValue;
+  }
+  function overallMatchesFilters(row){
+    if (overallProjectFilter.value && row.project !== overallProjectFilter.value) return false;
+    if (!statusFilterMatches(overallStatusFilter.value, row.statusKey)) return false;
+    if (overallDelayFilter.value && row.delayKey !== overallDelayFilter.value) return false;
+    var q = overallSearchInput.value.trim().toLowerCase();
+    if (q){
+      var hay = ((row.joineryId || "") + " " + (row.description || "") + " " + (row.workOrderNo || "") + " " + (row.project || "")).toLowerCase();
+      if (hay.indexOf(q) === -1) return false;
+    }
+    return true;
+  }
+  function renderOverallTable(){
+    var filtered = overallAllRows.filter(overallMatchesFilters);
+    filtered.sort(function(a, b){ return scheduleCompare(a, b, overallSort); });
+    overallTableBody.innerHTML = "";
+    filtered.forEach(function(row){
+      var tr = document.createElement("tr");
+      tr.innerHTML = scheduleRowCells(row, true);
+      wireRowActions(tr, row, "overall");
+      overallTableBody.appendChild(tr);
+    });
+    overallEmptyAll.hidden = overallAllRows.length !== 0;
+    overallEmpty.hidden = !(overallAllRows.length > 0 && filtered.length === 0);
+    overallTable.hidden = overallAllRows.length === 0;
+    Array.prototype.forEach.call(overallTable.querySelectorAll("th"), function(th){
+      th.classList.remove("sorted", "desc");
+      if (th.getAttribute("data-col") === overallSort.col){
+        th.classList.add("sorted");
+        if (overallSort.dir === "desc") th.classList.add("desc");
+      }
+    });
+  }
+  Array.prototype.forEach.call(overallTable.querySelectorAll("th"), function(th){
+    var col = th.getAttribute("data-col");
+    if (!col) return;
+    th.addEventListener("click", function(){
+      if (overallSort.col === col){ overallSort.dir = overallSort.dir === "asc" ? "desc" : "asc"; }
+      else { overallSort.col = col; overallSort.dir = "asc"; }
+      renderOverallTable();
+    });
+  });
+  [overallProjectFilter, overallStatusFilter, overallDelayFilter].forEach(function(el){ el.addEventListener("change", renderOverallTable); });
+  overallSearchInput.addEventListener("input", renderOverallTable);
+  document.getElementById("refreshOverallBtn").addEventListener("click", loadOverallSchedule);
+
+  // Reads EVERY project under the chosen root, sequentially -- a simple,
+  // known-scalable-enough-for-V1 design given how this family already
+  // reads its data (no project count in this ecosystem has ever needed
+  // more than that so far).
+  function loadOverallSchedule(){
+    overallTableCard.hidden = true;
+    overallLoadingCard.hidden = false;
+    return listExistingProjects(projectsRootHandle).then(function(names){
+      overallProjectFilter.innerHTML = "<option value=\"\">All projects</option>" + names.map(function(n){ return "<option value=\"" + escapeHtml(n) + "\">" + escapeHtml(n) + "</option>"; }).join("");
+      return names.reduce(function(chain, name){
+        return chain.then(function(acc){
+          return projectsRootHandle.getDirectoryHandle(name, { create: false }).then(function(projectHandle){
+            return Promise.all([
+              readJoineryItems(projectHandle),
+              readJoineryStatuses(projectHandle),
+              readJoinerySchedule(projectHandle),
+              readMachiningFlags(projectHandle)
+            ]).then(function(res){
+              // Solid Surface scoping (see filterSolidSurfaceItems/the
+              // top-of-file comment): only items with hasSolidSurface===true
+              // are ever built into a row here.
+              var rows = buildEnrichedRows(filterSolidSurfaceItems(res[0]), res[1], res[2], name, projectHandle, res[3]);
+              return acc.concat(rows);
+            });
+          }).catch(function(){ return acc; });
+        });
+      }, Promise.resolve([]));
+    }).then(function(rows){
+      overallAllRows = rows;
+      overallLoadingCard.hidden = true;
+      overallTableCard.hidden = false;
+      renderOverallTable();
+    }).catch(function(err){
+      console.error("Loading overall schedule failed:", err);
+      overallLoadingCard.hidden = true;
+      overallTableCard.hidden = false;
+      showToast("Couldn't read every project's schedule.");
+    });
+  }
+
+  /* ============================== Per-project Schedule screen ============================== */
+  var projTable = document.getElementById("projTable");
+  var projTableBody = document.getElementById("projTableBody");
+  var projEmpty = document.getElementById("projEmpty");
+  var projEmptyAll = document.getElementById("projEmptyAll");
+  var projLevelFilter = document.getElementById("projLevelFilter");
+  var projStatusFilter = document.getElementById("projStatusFilter");
+  var projDelayFilter = document.getElementById("projDelayFilter");
+  var projSearchInput = document.getElementById("projSearchInput");
+  var projectScheduleTitle = document.getElementById("projectScheduleTitle");
+  var levelPlanSelect = document.getElementById("levelPlanSelect");
+  var openLevelPlanBtn = document.getElementById("openLevelPlanBtn");
+  var levelPlanRow = document.getElementById("levelPlanRow");
+  var projAllRows = [];
+  var projSort = { col: "requiredDeliveryDate", dir: "asc" };
+  var activeProjectHandle = null, activeProjectName = "";
+
+  function projMatchesFilters(row){
+    if (projLevelFilter.value && row.level !== projLevelFilter.value) return false;
+    if (!statusFilterMatches(projStatusFilter.value, row.statusKey)) return false;
+    if (projDelayFilter.value && row.delayKey !== projDelayFilter.value) return false;
+    var q = projSearchInput.value.trim().toLowerCase();
+    if (q){
+      var hay = ((row.joineryId || "") + " " + (row.description || "") + " " + (row.workOrderNo || "")).toLowerCase();
+      if (hay.indexOf(q) === -1) return false;
+    }
+    return true;
+  }
+  function renderProjTable(){
+    var filtered = projAllRows.filter(projMatchesFilters);
+    filtered.sort(function(a, b){ return scheduleCompare(a, b, projSort); });
+    projTableBody.innerHTML = "";
+    filtered.forEach(function(row){
+      var tr = document.createElement("tr");
+      tr.innerHTML = scheduleRowCells(row, false);
+      wireRowActions(tr, row, "projectSchedule");
+      projTableBody.appendChild(tr);
+    });
+    projEmptyAll.hidden = projAllRows.length !== 0;
+    projEmpty.hidden = !(projAllRows.length > 0 && filtered.length === 0);
+    projTable.hidden = projAllRows.length === 0;
+    Array.prototype.forEach.call(projTable.querySelectorAll("th"), function(th){
+      th.classList.remove("sorted", "desc");
+      if (th.getAttribute("data-col") === projSort.col){
+        th.classList.add("sorted");
+        if (projSort.dir === "desc") th.classList.add("desc");
+      }
+    });
+  }
+  Array.prototype.forEach.call(projTable.querySelectorAll("th"), function(th){
+    var col = th.getAttribute("data-col");
+    if (!col) return;
+    th.addEventListener("click", function(){
+      if (projSort.col === col){ projSort.dir = projSort.dir === "asc" ? "desc" : "asc"; }
+      else { projSort.col = col; projSort.dir = "asc"; }
+      renderProjTable();
+    });
+  });
+  [projLevelFilter, projStatusFilter, projDelayFilter].forEach(function(el){ el.addEventListener("change", renderProjTable); });
+  projSearchInput.addEventListener("input", renderProjTable);
+  openLevelPlanBtn.addEventListener("click", function(){
+    if (!levelPlanSelect.value) { showToast("No levels with a saved plan found for this project yet."); return; }
+    openPlanCanvasForLevel(activeProjectHandle, activeProjectName, levelPlanSelect.value, "projectSchedule");
+  });
+
+  function loadProjectSchedule(projectHandle, projectName){
+    activeProjectHandle = projectHandle;
+    activeProjectName = projectName;
+    projectScheduleTitle.textContent = projectName;
+    return Promise.all([
+      readJoineryItems(projectHandle),
+      readJoineryStatuses(projectHandle),
+      readJoinerySchedule(projectHandle),
+      listExistingLevels(projectHandle),
+      readMachiningFlags(projectHandle)
+    ]).then(function(res){
+      // Solid Surface scoping (see filterSolidSurfaceItems/the top-of-file
+      // comment): only items with hasSolidSurface===true are ever built
+      // into a row here.
+      var rows = buildEnrichedRows(filterSolidSurfaceItems(res[0]), res[1], res[2], projectName, projectHandle, res[4]);
+      projAllRows = rows;
+      var levelNamesFromItems = Array.from(new Set(rows.map(function(r){ return r.level; }))).sort(function(a, b){ return a.localeCompare(b, undefined, { sensitivity: "base" }); });
+      projLevelFilter.innerHTML = "<option value=\"\">All levels</option>" + levelNamesFromItems.map(function(n){ return "<option value=\"" + escapeHtml(n) + "\">" + escapeHtml(n) + "</option>"; }).join("");
+      var planLevels = res[3];
+      levelPlanSelect.innerHTML = planLevels.map(function(n){ return "<option value=\"" + escapeHtml(n) + "\">" + escapeHtml(n) + "</option>"; }).join("");
+      levelPlanRow.hidden = planLevels.length === 0;
+      renderProjTable();
+    }).catch(function(err){
+      console.error("Loading project schedule failed:", err);
+      showToast("Couldn't read this project's schedule.");
+    });
+  }
+
+  /* ============================== Home / project list / navigation ============================== */
+  var screens = {
+    setup: document.getElementById("screenSetup"),
+    reconnect: document.getElementById("screenReconnect"),
+    home: document.getElementById("screenHome"),
+    overall: document.getElementById("screenOverall"),
+    projectSchedule: document.getElementById("screenProjectSchedule")
+  };
+  function showScreen(name){
+    Object.keys(screens).forEach(function(k){ screens[k].hidden = (k !== name); });
+    hideStatusHistoryPop(); // never leak the popup across a screen change (e.g. "View on plan")
+  }
+
+  var projectsRootHandle = null, projectsRootName = "";
+  var homeProjectListItems = document.getElementById("homeProjectListItems");
+  var homeProjectListEmpty = document.getElementById("homeProjectListEmpty");
+  var chooseRootBtn = document.getElementById("chooseRootBtn");
+  var chooseDifferentRootBtn = document.getElementById("chooseDifferentRootBtn");
+  var reconnectChooseDifferentBtn = document.getElementById("reconnectChooseDifferentBtn");
+  var reconnectBtn = document.getElementById("reconnectBtn");
+  var reconnectName = document.getElementById("reconnectName");
+  var setupError = document.getElementById("setupError");
+
+  function folderPickerErrorMessage(err){
+    if (err && err.name === "SecurityError") return "That folder can't be used here -- choose a different one.";
+    return "Couldn't open that folder -- try again.";
+  }
+
+  // Requests "readwrite" from the start -- this app's only write is its
+  // own new joinery-schedule.json, but that write happens the moment
+  // someone sets their first schedule, and asking again then would mean a
+  // second picker/consent round-trip for no benefit.
+  function pickProjectsRootFolder(){
+    return window.showDirectoryPicker({ id: "utzline-scheduler-root", mode: "readwrite" }).then(function(handle){
+      return detectFolderShape(handle).then(function(shape){
+        if (shape === "project"){
+          setupError.hidden = false;
+          setupError.textContent = "That looks like a single project's own folder, not your Projects folder. Choose the top-level folder that contains all your projects.";
+          return;
+        }
+        projectsRootHandle = handle; projectsRootName = handle.name;
+        // Remembering the folder for next time is a convenience, not a
+        // requirement for this session to work -- if persisting it fails
+        // for any reason, still show the project list rather than
+        // blocking on a "couldn't open that folder" error the person
+        // would have no way to act on.
+        return idbSet("projectsRootHandle", handle).catch(function(){}).then(function(){
+          return populateHome();
+        });
+      });
+    });
+  }
+  chooseRootBtn.addEventListener("click", function(){
+    setupError.hidden = true;
+    pickProjectsRootFolder().catch(function(err){
+      if (err && err.name === "AbortError") return;
+      console.error("Choose Projects folder failed:", err);
+      setupError.hidden = false;
+      setupError.textContent = folderPickerErrorMessage(err);
+    });
+  });
+  chooseDifferentRootBtn.addEventListener("click", function(){
+    pickProjectsRootFolder().catch(function(err){
+      if (err && err.name === "AbortError") return;
+      console.error("Choose Projects folder failed:", err);
+      showToast(folderPickerErrorMessage(err));
+    });
+  });
+  reconnectChooseDifferentBtn.addEventListener("click", function(){
+    pickProjectsRootFolder().catch(function(err){
+      if (err && err.name === "AbortError") return;
+      console.error("Choose Projects folder failed:", err);
+      showToast(folderPickerErrorMessage(err));
+    });
+  });
+  reconnectBtn.addEventListener("click", function(){
+    if (!projectsRootHandle) return;
+    projectsRootHandle.requestPermission({ mode: "readwrite" }).then(function(perm){
+      if (perm !== "granted") return;
+      populateHome();
+    });
+  });
+
+  function populateHome(){
+    populateIdentitySelector(); // needs projectsRootHandle to read utzline-users.csv -- best-effort, never blocks
+    return listExistingProjects(projectsRootHandle).then(function(names){
+      homeProjectListItems.innerHTML = "";
+      homeProjectListEmpty.hidden = names.length > 0;
+      names.forEach(function(name){
+        var row = document.createElement("button");
+        row.className = "list-item";
+        row.innerHTML = "<span>" + escapeHtml(name) + "</span><span class=\"chev\">&rsaquo;</span>";
+        row.addEventListener("click", function(){ openProjectSchedule(name); });
+        homeProjectListItems.appendChild(row);
+      });
+      document.title = "UTZLINE Solid Surface Schedule";
+      showScreen("home");
+    }).catch(function(err){
+      console.error("Listing projects failed:", err);
+      showToast("Couldn't list projects in this folder.");
+    });
+  }
+  function openProjectSchedule(name){
+    return projectsRootHandle.getDirectoryHandle(name, { create: false }).then(function(dirH){
+      showScreen("projectSchedule");
+      return loadProjectSchedule(dirH, name);
+    }).catch(function(err){
+      console.error("Opening project failed:", err);
+      showToast("Couldn't open that project.");
+    });
+  }
+  document.getElementById("openOverallScheduleBtn").addEventListener("click", function(){
+    showScreen("overall");
+    loadOverallSchedule();
+  });
+  document.getElementById("backFromOverallBtn").addEventListener("click", function(){ showScreen("home"); });
+  document.getElementById("backFromProjectScheduleBtn").addEventListener("click", function(){ showScreen("home"); });
+
+  /* ============================== boot ============================== */
+  function boot(){
+    if (typeof window.showDirectoryPicker !== "function"){
+      setupError.hidden = false;
+      setupError.textContent = "This browser doesn't support the File System Access API that UTZLINE Solid Surface Schedule needs. Use an up-to-date Chrome/Edge, or the installed app.";
+      showScreen("setup");
+      return;
+    }
+    loadDeviceUserName(); // shared device identity -- never blocks boot; also fires from populateHome() above, since order isn't guaranteed
+    idbGet("projectsRootHandle").then(function(handle){
+      if (!handle){ showScreen("setup"); return; }
+      projectsRootHandle = handle; projectsRootName = handle.name;
+      return handle.queryPermission({ mode: "readwrite" }).then(function(perm){
+        if (perm === "granted"){
+          return populateHome();
+        }
+        reconnectName.textContent = projectsRootName;
+        showScreen("reconnect");
+      });
+    }).catch(function(){
+      projectsRootHandle = null; projectsRootName = "";
+      showScreen("setup");
+    });
+  }
+
+  if ("serviceWorker" in navigator){
+    window.addEventListener("load", function(){
+      navigator.serviceWorker.register("./service-worker.js").catch(function(err){
+        console.error("Service worker registration failed:", err);
+      });
+    });
+  }
+
+  // Test-only hooks -- exposes the pure logic (business-day math, delay
+  // flagging, row building/sorting) plus the key DOM-driving entry points
+  // so a Playwright regression suite can exercise this app the same way
+  // every other app in the family is tested (fake-fs.js + a real
+  // window.showDirectoryPicker fake), without needing a real browser
+  // right-click/long-press gesture for every scenario.
+  window.__testHooks = {
+    subtractBusinessDays: subtractBusinessDays,
+    todayDateStr: todayDateStr,
+    computeDelayInfo: computeDelayInfo,
+    joineryStatusRank: joineryStatusRank,
+    readJoineryItems: readJoineryItems,
+    readJoineryStatuses: readJoineryStatuses,
+    readJoinerySchedule: readJoinerySchedule,
+    writeJoinerySchedule: writeJoinerySchedule,
+    readMainJoinerySchedule: readMainJoinerySchedule,
+    findScheduleRecord: findScheduleRecord,
+    filterSolidSurfaceItems: filterSolidSurfaceItems,
+    readMachiningFlags: readMachiningFlags,
+    findMachiningFlagRecord: findMachiningFlagRecord,
+    solidSurfaceCutLabel: solidSurfaceCutLabel,
+    buildEnrichedRows: buildEnrichedRows,
+    scheduleCompare: scheduleCompare,
+    listExistingProjects: listExistingProjects,
+    listExistingLevels: listExistingLevels,
+    readLevelFile: readLevelFile,
+    openScheduleModal: openScheduleModal,
+    openPlanCanvasForLevel: openPlanCanvasForLevel,
+    onPlanRightClickOrLongPress: onPlanRightClickOrLongPress,
+    onPlanTap: onPlanTap,
+    planMarkerAt: function(){ return planMarkerAt.apply(null, arguments); },
+    setPlanView: function(v){ Object.assign(planView, v); planApplyTransform(); },
+    getPlanView: function(){ return planView; },
+    loadOverallSchedule: loadOverallSchedule,
+    loadProjectSchedule: loadProjectSchedule,
+    openProjectSchedule: openProjectSchedule,
+    ready: function(){ return true; }
+  };
+
+  boot();
+})();
+</script>
+</body>
+</html>

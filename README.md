@@ -1,8 +1,146 @@
 # UTZLINE Solid Surface Schedule — installable app
 
-**Current version: v7** (its own independent version line, separate from
+**Current version: v8** (its own independent version line, separate from
 every other app in the family — bump this line, and add a dated entry
 below, every time a new build ships.)
+
+**v8 (2026-09-26):** The largest single-app round yet, built against a
+shared cross-app schema doc alongside parallel rounds on UTZLINE Scheduler,
+UTZLINE Machine Schedule and UTZLINE Projects — every field name and file
+shape below is a cross-app contract, not just an internal choice.
+
+*A. New "Completed"/"Delivered" PIN-locked buttons and file.* Andrew,
+verbatim: *"solid surface schedule to have completed and delivered
+buttons. (same setup as the carcase cut on the machine schedule, once
+selected they become pin locked)"*. This app now owns a brand-new,
+independent, event-sourced file — **"Solid Surface Completion"** — the
+first genuinely new per-item data file this app has ever owned (everything
+before this was either its own schedule or a read-only reference into
+another app's file). Two flags per item, `completed` and `delivered`,
+each simple `pending`/`done` (no third "N/A" state — unlike Machine
+Schedule's cuts, these are plain mark/unmark buttons), completely
+independent of each other and of the shared `joinery-status.json`
+pipeline — neither flag ever auto-advances the shared status, and neither
+touches the existing "Actual delivery" column (still driven only by
+`joinery-status.json`, byte-for-byte unchanged). Mirrors Machine Schedule's
+own `foldMachiningFlags`/`setMachiningCutState`/`performCutAction` exactly
+(same lockout rule: the very first change from pending needs no PIN, every
+change after that — including reverting the active button back to pending
+— re-confirms the signed-in person's own PIN via the numberpad; Cancel
+writes nothing; nobody signed in refuses with a toast and writes nothing).
+One immutable event file per change under
+`Project Saves/Solid Surface Completion/<Level> - <Room> - <Code>/`, named
+via the same `statusEventFileName` stamp every event branch in this family
+uses, `kind` = the flag name. **Read-only reader other apps should call**:
+`readSolidSurfaceCompletionRecordForItem(projectHandle, level, room,
+joineryId)` — a strict per-item read (every event file for that item must
+read cleanly or it rejects `read_failed`; a genuinely never-touched item
+resolves `null`), folding to `{ level, room, joineryId, completed:
+{state:"done", at, by}, delivered: {state:"done", at, by} }` with either
+or both keys absent when still pending. This app also carries its own
+soft, whole-project variant for the tables, `readSolidSurfaceCompletionForList(projectHandle)`.
+
+*B/C. Two new columns + the schedule-date block reorder.* The existing
+schedule-date columns are reordered from `Solid Surface delivery` →
+`Actual delivery` → `SS manufacture start` → `SS lead time` to: **SS
+manufacture start → SS lead time → Required Delivery Date** (relabelled
+from "Solid Surface delivery") **→ Actual delivery** (unchanged). Two new
+columns follow immediately after, right where the brief's own suggestion
+placed them — after the reordered date block, before Status/cut-status/
+Delay: **"Completed"** and **"SS Delivered"** (chosen over a plain
+"Delivered" specifically so it reads unambiguously next to the existing
+"Actual delivery" column, which is a different, shared-pipeline concept).
+Each new column doubles as the PIN-locked button itself (mirroring Machine
+Schedule's own cut cells) — pending shows the plain button, done shows
+"✓ Completed"/"✓ Delivered" plus a small locked meta line with who/when.
+The first 5/6 identifying columns (Project [Overall only] / Level / Room /
+Joinery ID / Description / Work order #) are untouched, per the family
+schema's own column-layout convention.
+
+*D. "Open item" row-action + a new, scoped-down Joinery Item page.* Leads
+every row's action cell (before "Open job note"/"View on plan"/"Edit
+schedule"), same class/wiring as Machine Schedule's and the main
+Scheduler's own button. This app's own Joinery Item page is deliberately
+**not** a verbatim port of the main Scheduler's full-featured one — this
+app has no shop-drawings/ITP-checklist/rework/delivery-location reader
+infrastructure at all (confirmed by grep against this file), so porting
+those sections verbatim would have meant inventing readers this app has no
+brief to own. Scoped down to what this app already reads: the item's full
+meta grid (including its two new Completed/SS Delivered fields and its
+Delay pills) plus its existing "Open job note"/"View on plan" buttons. If
+a future round wants the fuller page here, flagged for that decision
+rather than assumed.
+
+*E. Frozen (sticky) identifying columns.* The first 5/6 identifying
+columns are now `position: sticky` in both tables, computed at render time
+(`updateStickyOffsets`, one `--scN` CSS custom property written on the
+`<table>` per column, measured off the real rendered header widths rather
+than hardcoded — content is variable-length, e.g. Description) with a
+solid background (matching the row's own hover/zebra state) and a
+right-hand border/shadow marking the freeze boundary at Work order #. The
+app's own existing horizontal scroll wrapper is unchanged — it now simply
+only visibly scrolls everything from "SS manufacture start" onward, per
+the family schema.
+
+*F. Status icon change.* `in_manufacture` 🏭→🔨, `machined` ⚙️→🪚 in
+`joineryStatusIcon` (grepped for any other literal occurrence in this
+file — none found).
+
+*G. New "Delivery due soon" (blue) delay pill.* `computeDelayInfo` now
+returns an **array** of 1-2 pill objects rather than one — every call site
+updated (`buildEnrichedRows`, `rowFromSnapshot`, `applyScheduleChangeToRows`,
+the delay filter dropdowns/matching). The new `upcoming` pill ("Delivery
+due soon", reusing this app's own `--accent`) fires when the item isn't
+overdue and its Required Delivery Date is within the next 7 days
+inclusive, and is the one pill shown **side by side** with the existing
+amber "Manufacture start overdue" pill when both are true at once — every
+other state (red overdue, the post-delivery early/on-time/late outcomes,
+plain On track) stays single/exclusive as before.
+
+*H. Plan-canvas behaviour change.* Reverses Andrew's 2026-09-23 "mouse
+click to change dates" request for this app (the main Scheduler is the
+only other app this applies to, per the schema doc): a plain tap/press on
+a marker again shows a **read-only status summary toast** (item id,
+current status, current schedule dates if set — the exact behaviour that
+2026-09-23 request had overridden); long-press/right-click now opens a new
+**3-button marker menu** — "Edit delivery date" (the same Set Schedule
+dialog as before), "Open job note" (only shown when the item actually has
+one), "Open item" (the new Joinery Item page, part D) — instead of jumping
+straight to the dialog. Marker dot colour is now delay-status-driven
+instead of the saved room-type colour: **red** for either "Delivery
+overdue" or "Manufacture start overdue" (both share red on the plan even
+though the Delay column itself keeps them visually distinct), **blue** for
+"Delivery due soon", **green** for on-track/delivered-on-time/early,
+**grey** for no schedule set. ("Delivered late" isn't named in the family
+schema's own colour list for this — treated as red here, consistent with
+the Delay column's own `.delay-late` reusing this app's danger-red for
+that same outcome; flagged as an interpretation call.) Computed once per
+plan open (`planMarkerColorForDelay`, fed by the same batched
+status/schedule/machining-flags/completion reads the tables already use),
+not per marker tap.
+
+*Tests.* Four existing files needed updates for the column-index shift and
+the tap/long-press behaviour change (`run_solid_surface_schedule_scoping_and_prefill.js`,
+`run_solid_surface_schedule_sweep_back_button.js`,
+`run_solid_surface_schedule_sweep_idb_single_connection.js`,
+`run_solid_surface_schedule_sweep_instant_paint_cache.js`,
+`run_solid_surface_schedule_sweep_unreadable_not_empty.js` — the last one
+also had its own `.delay-pill` collection widened defensively to the new
+1-2-pills-per-row shape, a call site the family schema explicitly warns
+every app to check); `run_solid_surface_schedule_sweep_hide_tickboxes.js`
+needed no change (already column-position-agnostic). One brand-new file,
+`run_solid_surface_completion_v8_sweep.js`, covers every section above end
+to end: the Completed/Delivered PIN lockout (refused signed-out, first-tap-
+no-PIN, PIN-required-and-cancellable revert, the two flags' independence),
+both tables' exact header order/labels, the sticky-column CSS/offsets,
+"Open item" + the new Joinery Item page's content, the amber+blue two-pill
+case, and the full plan-canvas rewrite (tap-shows-summary, long-press-
+opens-menu, all three menu buttons, marker colour). That new test caught
+one real bug fixed along the way: `closeJoineryItemPage()`'s
+"opened-from-the-plan" branch unhid the paused plan canvas underneath but
+never hid the Joinery Item screen itself, leaving it stacked on top. Full
+Solid Surface Schedule suite: **8/8**. `service-worker.js` cache bumped to
+`utzline-solid-surface-schedule-cache-v8`.
 
 **v7 (2026-09-26):** Event-sourced this app's OWN `solid-surface-schedule.json`, and gave this app its own IndexedDB database. Andrew was told directly, after the v6 sweep, that the safety-net work made the whole-file read *safe against an unreadable file* but left it exactly as exposed as before to a different hazard: two site managers scheduling different Solid Surface items in the same project at the same moment could still silently clobber each other, last-write-wins, on the next read-modify-write. Asked what's best given that devices already have independent per-device logins (the name+PIN identity system this app already has), the answer was: convert this file to the SAME event-sourced pattern already used elsewhere in this exact codebase for `joinery-status.json` and `machining-flags.json`, and — critically — for this app's own existing read-only port of the MAIN Scheduler's own `joinery-schedule.json` (`foldMainJoinerySchedule`/`migrateLegacyMainJoineryScheduleIfNeeded`/`readMainScheduleRecordForItem`, all already in this file), which was the closest template since it already lived here; the MAIN Scheduler's own write-side implementation of the exact same file shape (a sibling folder, its own `index.html`) was the second template, just for a different owning app.
 
@@ -314,3 +452,19 @@ directory, same harness, all named `run_solid_surface_schedule_sweep_*.js`
 - `run_solid_surface_schedule_sweep_hide_tickboxes.js` — the "Hide
   delivered" / "Hide installed" tick boxes on both tables, remembered
   across a reload.
+
+**v8 sweep test (2026-09-26)** — `run_solid_surface_completion_v8_sweep.js`,
+covering every section of that round end to end: the new Completed/
+Delivered PIN-locked buttons and their lockout rule, both tables' exact
+header order/labels after the reorder, the sticky-column CSS, "Open item"
++ the new Joinery Item page, the new "Delivery due soon" pill (including
+the amber+blue side-by-side case), and the full plan-canvas tap/long-press
+rewrite (summary toast, the 3-button marker menu and all three of its
+actions, delay-driven marker colour). The four sections above whose own
+column indices or plan-tap behaviour this round changed
+(`run_solid_surface_schedule_scoping_and_prefill.js`,
+`run_solid_surface_schedule_sweep_back_button.js`,
+`run_solid_surface_schedule_sweep_idb_single_connection.js`,
+`run_solid_surface_schedule_sweep_instant_paint_cache.js`,
+`run_solid_surface_schedule_sweep_unreadable_not_empty.js`) were updated in
+place rather than rewritten. Full suite: **8/8**.

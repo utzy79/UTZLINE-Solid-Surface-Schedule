@@ -332,6 +332,11 @@
      viewports. Same override pattern UTZLINE Projects' own Register/Rework
      Register screens use. */
   .screen.wide-table{ max-width: none; }
+  /* ---- Joinery item page meta grid (2026-09-26, v8, part D) -- ported
+       from Machine Schedule's/the main Scheduler's own identical rule. ---- */
+  .meta-grid{ display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 14px; }
+  .meta-grid dt{ color: var(--muted); }
+  .meta-grid dd{ margin: 0; }
   h1{ font-size: 20px; margin: 0 0 6px; }
   p.sub{ color: var(--muted); margin: 0 0 20px; font-size: 14px; line-height: 1.5; }
   .card{
@@ -530,7 +535,59 @@
   .delay-ontime{ background: rgba(51,196,106,0.16); color: var(--ok); }
   .delay-early{ background: rgba(51,196,106,0.16); color: var(--ok); }
   .delay-late{ background: rgba(255,93,93,0.18); color: var(--danger); }
-  .row-actions{ display: flex; gap: 6px; }
+  /* "Delivery due soon" (2026-09-26, v8, family schema §3) -- reuses this
+     app's own --accent (a blue/teal here too), same rgba-from-var pattern
+     as every other .delay-* rule above. Shown SIDE BY SIDE with
+     .delay-start (amber) when both apply -- see delayPillsHtml. */
+  .delay-upcoming{ background: rgba(79,95,224,0.18); color: var(--accent); }
+  .row-actions{ display: flex; gap: 6px; flex-wrap: wrap; }
+  /* ---- "Completed"/"Delivered" buttons (2026-09-26, v8, schema §1/part A) --
+     ported from Machine Schedule's own cutCellHtml pattern/CSS classes
+     (.cut-group/.cut-btn/.cut-meta), adapted: only ONE button per flag (a
+     simple mark/unmark toggle, not a Done/N/A pair) since these two flags
+     are plain booleans, per schema §1's "no na -- these are simple
+     mark/unmark buttons". Locked (PIN-required) look is the same small
+     lock glyph on the meta line as Machine Schedule's own cut buttons. ---- */
+  .completion-cell{ white-space: normal; }
+  .cut-group{ display: inline-flex; gap: 4px; }
+  .cut-btn{
+    background: transparent; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 7px;
+    padding: 4px 8px; font-size: 11px; font-weight: 600; cursor: pointer;
+    white-space: nowrap;
+  }
+  .cut-btn:hover{ border-color: var(--accent); color: var(--text); }
+  .cut-btn:disabled{ opacity: .55; cursor: default; }
+  .cut-btn.cut-done.active{ background: var(--ok); border-color: var(--ok); color: #06210f; }
+  .cut-meta{ color: var(--muted); font-size: 10px; margin-top: 3px; }
+  /* ---- Frozen (sticky) identifying columns + this app's OWN existing
+     horizontal scroll bar (.table-scroll, above) (2026-09-26, v8, family
+     schema §5). Every column up to and including Work order # (the
+     identifying columns, schema §2) stays pinned via position:sticky with
+     a solid background matching this table's own row/hover background, so
+     text scrolled underneath never shows through, and a right-hand
+     border/shadow on the LAST frozen column (Work order #, tagged
+     "sticky-col-last") marks the freeze boundary -- the scroll bar then
+     only visibly scrolls the reordered schedule-date block onward. The
+     trailing row-actions column is left scrolling with the rest (schema
+     §5's own "simplest, safest default"). Left offsets are per-column
+     PIXEL WIDTHS, which vary with content/viewport, so they're computed at
+     render time (updateStickyOffsets, one CSS custom property per column
+     set on the <table> itself) rather than hard-coded -- see that
+     function's own comment. Overall's table has 6 sticky columns (Project
+     leads it); the per-project table has 5 (no Project column) -- both
+     tables share the same --sc0.."--sc5 custom-property names, scoped
+     harmlessly per table since each is set on that table element only. */
+  .sched-table .sticky-col{ position: sticky; background: var(--panel); z-index: 1; }
+  .sched-table thead th.sticky-col{ z-index: 3; }
+  .sched-table tbody tr:hover td.sticky-col{ background: var(--panel2); }
+  .sched-table .sticky-col-last{ border-right: 1px solid var(--border); box-shadow: 3px 0 6px -3px rgba(0,0,0,0.45); }
+  #overallTable .sticky-col:nth-child(1), #projTable .sticky-col:nth-child(1){ left: var(--sc0, 0px); }
+  #overallTable .sticky-col:nth-child(2), #projTable .sticky-col:nth-child(2){ left: var(--sc1, 0px); }
+  #overallTable .sticky-col:nth-child(3), #projTable .sticky-col:nth-child(3){ left: var(--sc2, 0px); }
+  #overallTable .sticky-col:nth-child(4), #projTable .sticky-col:nth-child(4){ left: var(--sc3, 0px); }
+  #overallTable .sticky-col:nth-child(5), #projTable .sticky-col:nth-child(5){ left: var(--sc4, 0px); }
+  #overallTable .sticky-col:nth-child(6){ left: var(--sc5, 0px); }
 
   /* ---- Status-history hover popup (2026-09-23, ported from UTZLINE
        Projects' Joinery Register -- see index.html there for the original.
@@ -712,6 +769,7 @@
         <option value="">Any delay status</option>
         <option value="delivery">Delivery overdue</option>
         <option value="start">Manufacture start overdue</option>
+        <option value="upcoming">Delivery due soon</option>
         <option value="ontrack">On track</option>
         <option value="late">Delivered late</option>
         <option value="ontime">Delivered on time</option>
@@ -737,16 +795,18 @@
       <table class="sched-table" id="overallTable">
         <thead>
           <tr>
-            <th data-col="project">Project</th>
-            <th data-col="level">Level</th>
-            <th data-col="room">Room</th>
-            <th data-col="joineryId">Joinery ID</th>
-            <th data-col="description">Description</th>
-            <th data-col="workOrderNo">Work order #</th>
-            <th data-col="requiredDeliveryDate">Solid Surface delivery</th>
-            <th data-col="actualDeliveredAt">Actual delivery</th>
+            <th data-col="project" class="sticky-col">Project</th>
+            <th data-col="level" class="sticky-col">Level</th>
+            <th data-col="room" class="sticky-col">Room</th>
+            <th data-col="joineryId" class="sticky-col">Joinery ID</th>
+            <th data-col="description" class="sticky-col">Description</th>
+            <th data-col="workOrderNo" class="sticky-col sticky-col-last">Work order #</th>
             <th data-col="manufactureStartDate">SS manufacture start</th>
             <th data-col="leadTime">SS lead time</th>
+            <th data-col="requiredDeliveryDate">Required Delivery Date</th>
+            <th data-col="actualDeliveredAt">Actual delivery</th>
+            <th data-col="completed">Completed</th>
+            <th data-col="ssDelivered">SS Delivered</th>
             <th data-col="status">Status</th>
             <th data-col="cutStatus">SS cut (Machine Sched.)</th>
             <th data-col="delay">Delay</th>
@@ -770,7 +830,7 @@
       <span class="section-title" style="margin:0;">Open a level's plan:</span>
       <select id="levelPlanSelect"></select>
       <button class="btn secondary sm" id="openLevelPlanBtn">Open plan</button>
-      <span class="sub" style="margin:0; font-size:12px;">Click a Solid Surface marker on the plan to set its schedule (right-click/long-press also works). Non-Solid-Surface markers are shown muted for context only.</span>
+      <span class="sub" style="margin:0; font-size:12px;">Tap a Solid Surface marker on the plan for its status; right-click or press and hold for schedule/job-note/item actions. Non-Solid-Surface markers are shown muted for context only.</span>
     </div>
     <div class="filters-bar">
       <select id="projLevelFilter"><option value="">All levels</option></select>
@@ -788,6 +848,7 @@
         <option value="">Any delay status</option>
         <option value="delivery">Delivery overdue</option>
         <option value="start">Manufacture start overdue</option>
+        <option value="upcoming">Delivery due soon</option>
         <option value="ontrack">On track</option>
         <option value="late">Delivered late</option>
         <option value="ontime">Delivered on time</option>
@@ -809,15 +870,17 @@
       <table class="sched-table" id="projTable">
         <thead>
           <tr>
-            <th data-col="level">Level</th>
-            <th data-col="room">Room</th>
-            <th data-col="joineryId">Joinery ID</th>
-            <th data-col="description">Description</th>
-            <th data-col="workOrderNo">Work order #</th>
-            <th data-col="requiredDeliveryDate">Solid Surface delivery</th>
-            <th data-col="actualDeliveredAt">Actual delivery</th>
+            <th data-col="level" class="sticky-col">Level</th>
+            <th data-col="room" class="sticky-col">Room</th>
+            <th data-col="joineryId" class="sticky-col">Joinery ID</th>
+            <th data-col="description" class="sticky-col">Description</th>
+            <th data-col="workOrderNo" class="sticky-col sticky-col-last">Work order #</th>
             <th data-col="manufactureStartDate">SS manufacture start</th>
             <th data-col="leadTime">SS lead time</th>
+            <th data-col="requiredDeliveryDate">Required Delivery Date</th>
+            <th data-col="actualDeliveredAt">Actual delivery</th>
+            <th data-col="completed">Completed</th>
+            <th data-col="ssDelivered">SS Delivered</th>
             <th data-col="status">Status</th>
             <th data-col="cutStatus">SS cut (Machine Sched.)</th>
             <th data-col="delay">Delay</th>
@@ -828,6 +891,32 @@
       </table>
       <div class="empty-note" id="projEmpty" hidden>No items match these filters.</div>
       <div class="empty-note" id="projEmptyAll" hidden>No joinery items in this project yet.</div>
+    </div>
+  </section>
+
+  <!-- ---- Joinery item page (2026-09-26, v8, part D) -- opened from any
+       row's new "Open item" button, leading the row-actions cell, same
+       class/wiring as Machine Schedule's and the main Scheduler's own
+       button. This app never had shop-drawing/ITP-checklist/rework/
+       delivery-location readers of its own before this round (unlike those
+       two sibling apps, which already had that infrastructure to port from
+       when THEY built this same page) -- building all of that from scratch
+       is out of scope for a row-actions button port, so this page is
+       scoped down to what this app already reads: the item's own meta
+       (including its two new Completed/SS Delivered flags) plus its job
+       notes list (this app's own existing listJobNotes/openJobNoteDialogForRow,
+       reused verbatim). See this app's own report for that call. -->
+  <section id="screenJoineryItem" class="screen wide-table">
+    <div class="row backrow">
+      <button class="btn secondary sm" id="backFromJoineryItemBtn">&larr; Back</button>
+      <h1 id="joineryItemTitle" style="margin:0;">Joinery item</h1>
+    </div>
+    <div class="card">
+      <dl class="meta-grid" id="joineryItemMetaGrid"></dl>
+      <div class="row" style="margin-top:14px;">
+        <button class="btn secondary sm" id="jiViewOnPlanBtn">View on plan</button>
+        <button class="btn secondary sm" id="jiJobNoteBtn">Open job note</button>
+      </div>
     </div>
   </section>
 
@@ -862,7 +951,7 @@
       </g>
     </svg>
   </div>
-  <div class="plan-canvas-hint">Read-only plan. Click (or right-click, or press and hold on touch) a Solid Surface marker to set its delivery date and lead time -- muted markers aren't flagged for Solid Surface and only show a reminder toast. Drag to pan, scroll or pinch to zoom, or use the zoom/reset-view buttons above.</div>
+  <div class="plan-canvas-hint">Tap a Solid Surface marker for a quick status summary. Right-click (or press and hold on touch) for actions: edit delivery date, open job note, or open item -- muted markers aren't flagged for Solid Surface and only show a reminder toast. Drag to pan, scroll or pinch to zoom, or use the zoom/reset-view buttons above.</div>
 </section>
 
 <!-- ---- Set Schedule modal ---- -->
@@ -909,6 +998,29 @@
       <div></div>
       <div class="right">
         <button class="btn secondary" id="jobNoteViewCancel">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ---- Plan-canvas marker menu (2026-09-26, v8, family schema §6) --
+     replaces long-press/right-click jumping straight to the Set Schedule
+     dialog: a plain tap now shows a read-only toast (showPlanTapSummary),
+     and long-press/right-click opens this 3-button popup instead. Reuses
+     this app's own .modal-backdrop/.modal/.btn classes (not Install ITP's
+     .mbtn pattern) for consistency with the rest of this file. -->
+<div class="modal-backdrop" id="markerMenuBackdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="markerMenuTitle" style="max-width:340px;">
+    <h2 id="markerMenuTitle">Item</h2>
+    <div style="display:flex; flex-direction:column; gap:8px; margin:12px 0 14px;">
+      <button type="button" class="btn" id="markerMenuEditBtn" style="width:100%;">Edit delivery date</button>
+      <button type="button" class="btn secondary" id="markerMenuJobNoteBtn" style="width:100%;">Open job note</button>
+      <button type="button" class="btn secondary" id="markerMenuOpenItemBtn" style="width:100%;">Open item</button>
+    </div>
+    <div class="modal-actions">
+      <div></div>
+      <div class="right">
+        <button class="btn secondary" id="markerMenuCancelBtn">Cancel</button>
       </div>
     </div>
   </div>
@@ -1754,8 +1866,8 @@
       case "installed": return "🏆";
       case "delivered": return "🚚";
       case "manufactured": return "📦";
-      case "machined": return "⚙️";
-      case "in_manufacture": return "🏭";
+      case "machined": return "🪚";
+      case "in_manufacture": return "🔨";
       case "measured": return "📏";
       default: return "";
     }
@@ -2592,6 +2704,199 @@
     }catch(e){ return ""; }
   }
 
+  /* ============================== Solid Surface Completion (2026-09-26, v8) ==============================
+     Schema doc §1 / brief part A: two independent, per-item, PIN-locked-
+     after-first-set boolean flags -- "Completed" and "Delivered" -- Andrew,
+     verbatim: "solid surface schedule to have completed and delivered
+     buttons. (same setup as the carcase cut on the machine schedule, once
+     selected they become pin locked)", confirmed separate/independent of
+     each other AND separate from the shared joinery-status.json pipeline
+     (no Delivery ITP sign-off involved, nothing here ever touches the
+     shared "delivered" status or the existing "Actual delivery" column,
+     which stays driven only by joinery-status.json, untouched by this
+     branch). THIS APP IS THE ONLY WRITER of this branch this round --
+     Scheduler and UTZLINE Projects read it read-only via their own port of
+     readMainScheduleRecordForItem's own strict-per-item-read pattern (see
+     that function's own comment below); this is a brand-new branch, so
+     there is no legacy file and no migration needed.
+     Mirrors Machine Schedule's own machining-flags.json v2 event-sourced
+     design exactly (one immutable event file per change, under "Project
+     Saves/Solid Surface Completion/<key>/", key = joineryItemPageKey) --
+     minus the tri-state Done/N/A shape (only two states exist: "pending"/
+     "done" -- see foldSolidSurfaceCompletion) and minus any auto-advance of
+     the shared joinery-status.json (these two flags never write to it,
+     full stop -- unlike Machine Schedule's own auto-advance-to-"machined"). */
+  function solidSurfaceCompletionBranchName(){ return "Solid Surface Completion"; }
+  // Memoised per project (getCachedDir) -- see getJoineryStatusEventsRootDir.
+  function getSolidSurfaceCompletionEventsRootDir(projectHandle, create){
+    return projectDir(projectHandle, [projectSavesDirName(), solidSurfaceCompletionBranchName()], !!create);
+  }
+  function getSolidSurfaceCompletionItemDir(projectHandle, key, create){
+    return getSolidSurfaceCompletionEventsRootDir(projectHandle, create).then(function(rootH){
+      return rootH.getDirectoryHandle(key, { create: !!create });
+    });
+  }
+  // Every event file for the item must read cleanly (one retry each,
+  // readJsonFileHandleStrict) or this rejects read_failed; [] only when the
+  // item's folder genuinely doesn't exist yet. Generic (not specific to
+  // this branch) -- mirrors Machine Schedule's own readEventsForItemStrict
+  // verbatim, since every event-sourced branch in this family shares the
+  // exact same "one JSON file per event, named by statusEventFileName"
+  // shape.
+  function readEventsForItemStrict(itemDirP, what){
+    return itemDirP.then(function(dirH){
+      return listJsonFileHandlesIn(dirH).then(function(handles){
+        return Promise.all(handles.map(readJsonFileHandleStrict));
+      });
+    }, function(err){
+      if (isNotFoundErr(err)) return [];
+      return Promise.reject(readFailedErr(what, err));
+    });
+  }
+  // Exactly per schema §1 -- mirrors foldMachiningFlags verbatim,
+  // substituting cutType -> flag and ["carcase","colourBoard","solidSurface"]
+  // -> ["completed","delivered"]. A folded record looks like
+  // { level, room, joineryId, completed: {state:"done",at,by}?, delivered:
+  // {state:"done",at,by}? } -- either or both keys may be absent (never
+  // set) or present (state is only ever "done" once present; "pending" is
+  // the key being ABSENT, not a literal {state:"pending"} object).
+  function foldSolidSurfaceCompletion(events){
+    if (!events || !events.length) return null;
+    var any = events[0];
+    var rec = { level: any.level || "", room: any.room || "", joineryId: any.joineryId || "" };
+    var hasAnyNonPending = false;
+    ["completed", "delivered"].forEach(function(flag){
+      var evs = events.filter(function(e){ return e.flag === flag; });
+      if (!evs.length) return;
+      var latest = null;
+      evs.forEach(function(e){ if (!latest || (e.at || "") > (latest.at || "")) latest = e; });
+      if (latest.state && latest.state !== "pending"){
+        rec[flag] = { state: latest.state, at: latest.at, by: latest.by || "" };
+        hasAnyNonPending = true;
+      }
+    });
+    return hasAnyNonPending ? rec : null;
+  }
+  // STRICT single-item read, for the post-write confirmation inside
+  // setSolidSurfaceCompletionFlag below (mirrors readMachiningFlagsRecordForItem/
+  // readMainScheduleRecordForItem's own strict-per-item pattern) -- and the
+  // one other reading apps in this family (Scheduler, UTZLINE Projects) are
+  // expected to port read-only as their own readSolidSurfaceCompletionRecordForItem.
+  function readSolidSurfaceCompletionRecordForItem(projectHandle, level, room, joineryId){
+    var key = joineryItemPageKey(level, room, joineryId);
+    return getSolidSurfaceCompletionEventsRootDir(projectHandle, false).then(function(rootH){
+      return readEventsForItemStrict(rootH.getDirectoryHandle(key, { create: false }), "completion events for " + key).then(foldSolidSurfaceCompletion);
+    }, function(err){
+      if (isNotFoundErr(err)) return null; // no folder at all -- genuinely never set
+      return Promise.reject(readFailedErr("Solid Surface Completion folder", err));
+    });
+  }
+  // Best-effort DISPLAY read (the "Completed"/"SS Delivered" table columns)
+  // -- soft per-item fold through the shared folded-event cache, same
+  // "unreadable is not empty" discipline as readMachiningFlags: any failure
+  // resolves [] so the tables still render (buttons show Pending) rather
+  // than blocking a whole project's load over this one column pair.
+  function readSolidSurfaceCompletionForList(projectHandle){
+    if (!projectHandle) return Promise.resolve([]);
+    return getSolidSurfaceCompletionEventsRootDir(projectHandle, false).then(function(rootH){
+      return readFoldedEventBranch(projectHandle, rootH, solidSurfaceCompletionBranchName(), foldSolidSurfaceCompletion);
+    }, function(err){
+      if (isNotFoundErr(err)) return [];
+      return Promise.reject(readFailedErr("Solid Surface Completion folder", err));
+    }).catch(function(err){
+      console.warn("Solid Surface Completion read failed (columns left at Pending):", err);
+      return [];
+    });
+  }
+  function findSolidSurfaceCompletionRecord(list, level, room, joineryId){
+    for (var i = 0; i < (list || []).length; i++){
+      var rec = list[i];
+      if (rec && rec.level === level && (rec.room || "") === (room || "") && (rec.joineryId || "") === (joineryId || "")) return rec;
+    }
+    return null;
+  }
+  // THE write path -- mirrors setMachiningCutState verbatim MINUS the
+  // hasSolidSurface/auto-advance-to-"machined" part (schema §1: "there is
+  // NO auto-advance of the shared joinery status here -- these two flags
+  // never write to joinery-status.json, full stop"). Always writes one new
+  // immutable event file, then re-reads that item's own events strictly to
+  // resolve the fold that write produced; { rec:null, checkFailed:true } if
+  // the write succeeded but the confirmation re-read couldn't be trusted
+  // (matches the existing checkFailed pattern other writers in this family
+  // use), never a rejection for that case -- the write itself is never
+  // undone by a re-read that merely couldn't be confirmed.
+  function setSolidSurfaceCompletionFlag(projectHandle, level, room, joineryId, flag, newState, updatedBy){
+    if (!projectHandle) return Promise.resolve(null);
+    var key = joineryItemPageKey(level, room, joineryId);
+    var payload = { flag: flag, level: level, room: room || "", joineryId: joineryId || "", state: newState, by: updatedBy || "", at: new Date().toISOString() };
+    var stamp = statusEventStampFromIso(payload.at);
+    return getSolidSurfaceCompletionItemDir(projectHandle, key, true).then(function(dirH){
+      return dirH.getFileHandle(statusEventFileName(payload.by, stamp, flag), { create: true });
+    }).then(function(fh){
+      return fh.createWritable();
+    }).then(function(w){
+      return w.write(JSON.stringify(payload)).then(function(){ return w.close(); });
+    }).then(function(){
+      return readEventsForItemStrict(getSolidSurfaceCompletionItemDir(projectHandle, key, false), "completion events for " + key).then(function(events){
+        var seen = events.some(function(e){ return e && e.flag === payload.flag && e.at === payload.at && e.state === payload.state; });
+        return seen ? events : events.concat([payload]);
+      }, function(err){
+        if (isReadFailed(err)) return null; // saved, but the confirmation fold can't be trusted -- see below
+        return Promise.reject(err);
+      });
+    }).then(function(events){
+      if (events === null) return { rec: null, checkFailed: true };
+      return { rec: foldSolidSurfaceCompletion(events), checkFailed: false };
+    });
+  }
+  // Shared front door for both the "Completed" and "Delivered" buttons
+  // (mirrors Machine Schedule's own performCutAction exactly): resolves
+  // null (a no-op, already toasted/logged) if nobody's signed in or the
+  // write failed; resolves { rec, checkFailed } on success. Lockout
+  // (schema §1): the very FIRST change from pending needs no PIN beyond
+  // being signed in; EVERY change after that -- reverting the active button
+  // back to pending, or re-tapping it -- re-confirms the signed-in
+  // person's own PIN via openNumberpad + readUsersCsv/findUserRowCI, same
+  // wording pattern as every other PIN gate in this family. Cancel writes
+  // nothing. The two flags are completely independent of each other (a
+  // click here only ever touches ONE flag's own latest event).
+  function performCompletionAction(projectHandle, level, room, joineryId, flag, currentState, targetState){
+    if (!deviceUserName){
+      showToast("Set your name first (top of the Home screen) before recording this.");
+      return Promise.resolve(null);
+    }
+    var newState = currentState === targetState ? "pending" : targetState;
+    var editorName = deviceUserName;
+    function writeIt(){
+      return setSolidSurfaceCompletionFlag(projectHandle, level, room, joineryId, flag, newState, editorName).then(function(result){
+        if (result && result.checkFailed) showToast("Saved — but this item's record couldn't be re-read just now (still syncing?). Tap Refresh in a moment.", 5000);
+        return result;
+      }).catch(function(err){
+        console.error("Recording " + flag + " failed:", err);
+        showToast(isReadFailed(err) ? "Couldn't save: this project's Solid Surface Completion records couldn't be read (still syncing?) — try again in a moment." : "Couldn't save this — try again.");
+        return null;
+      });
+    }
+    if (currentState === "pending") return writeIt();
+    return openNumberpad({
+      title: "Confirm PIN",
+      subtitle: "to change this as “" + editorName + "”",
+      verify: function(pin){
+        return readUsersCsv().then(function(rows){
+          var row = findUserRowCI(rows, editorName);
+          return !!(row && row.pin === pin);
+        });
+      }
+    }).then(function(pin){
+      if (pin === null){ showToast("Change cancelled — nothing was saved."); return null; }
+      return writeIt();
+    }).catch(function(err){
+      console.error("PIN check failed:", err);
+      showToast(isReadFailed(err) ? "Couldn't read utzline-users.csv (still syncing?) — nothing was changed. Try again in a moment." : "Couldn't verify your PIN — try again.");
+      return null;
+    });
+  }
+
   /* ============================== business-day date math ==============================
      "this gives a manufacture start date that is the delivery date - the
      manufacture lead time" (in business days). Walks back one calendar
@@ -2727,24 +3032,59 @@
          same treatment "manufactured" itself already got before this
          round, which is the right behaviour for a mid-pipeline stage that
          didn't exist yet when these thresholds were first written. */
+  // (2026-09-26, v8, family schema §3) Returns an ARRAY of 1-2 pills now,
+  // not a single {key,label,severity} object -- an item can show BOTH
+  // "Manufacture start overdue" (amber) and the new "Delivery due soon"
+  // (blue) side by side. Every other combination stays single/exclusive:
+  // the delivered-outcome pills (early/on-time/late) and "Delivery overdue"
+  // are always returned alone, and "No schedule set"/"On track" are the
+  // fallback when nothing else applies. Every call site now reads
+  // row.delayPills (the array) plus row.delayKeys/row.delaySeverity
+  // (derived from it) instead of a single delayKey/delayLabel pair.
   function computeDelayInfo(scheduleRec, statusKey, todayStr, actualDeliveredAt){
     if (!scheduleRec || !scheduleRec.requiredDeliveryDate){
-      return { key: "none", label: "No schedule set", severity: 0 };
+      return [{ key: "none", label: "No schedule set", severity: 0 }];
     }
     var rank = joineryStatusRank(statusKey);
     if (rank >= 5 && actualDeliveredAt){
       var diffDays = daysBetweenDateStrs(actualDeliveredAt, scheduleRec.requiredDeliveryDate); // actual - required
-      if (diffDays > 2) return { key: "late", label: "Delivered late", severity: 3 };
-      if (diffDays < -2) return { key: "early", label: "Delivered early", severity: 0 };
-      return { key: "ontime", label: "Delivered on time", severity: 0 };
+      if (diffDays > 2) return [{ key: "late", label: "Delivered late", severity: 3 }];
+      if (diffDays < -2) return [{ key: "early", label: "Delivered early", severity: 0 }];
+      return [{ key: "ontime", label: "Delivered on time", severity: 0 }];
     }
+    var pills = [];
     if (todayStr > scheduleRec.requiredDeliveryDate && rank < 6){
-      return { key: "delivery", label: "Delivery overdue", severity: 3 };
+      pills.push({ key: "delivery", label: "Delivery overdue", severity: 3 });
+    } else {
+      // "upcoming" (schema §3): not yet delivered, not overdue,
+      // requiredDeliveryDate within the next 7 days from today, inclusive.
+      var daysUntilDelivery = daysBetweenDateStrs(scheduleRec.requiredDeliveryDate, todayStr);
+      if (daysUntilDelivery >= 0 && daysUntilDelivery <= 7){
+        pills.push({ key: "upcoming", label: "Delivery due soon", severity: 2 });
+      }
     }
     if (scheduleRec.manufactureStartDate && todayStr > scheduleRec.manufactureStartDate && rank < 2){
-      return { key: "start", label: "Manufacture start overdue", severity: 2 };
+      pills.push({ key: "start", label: "Manufacture start overdue", severity: 2 });
     }
-    return { key: "ontrack", label: "On track", severity: 1 };
+    if (!pills.length) pills.push({ key: "ontrack", label: "On track", severity: 1 });
+    return pills;
+  }
+  // (2026-09-26, v8, family schema §6) Plan-canvas marker dot colour, driven
+  // by the same delay-pill array computeDelayInfo already builds for the
+  // table's Delay cell -- red for either overdue state (delivery OR
+  // manufacture-start -- confirmed both share red on the plan even though
+  // the Delay column itself keeps them visually distinct per schema §3),
+  // blue for "Delivery due soon", green for on-track/delivered-on-time/
+  // early, grey for "No schedule set". "Delivered late" isn't named in the
+  // schema list; treated as red here, matching .delay-late's own reuse of
+  // this app's danger-red for that same outcome in the Delay column.
+  function planMarkerColorForDelay(pills){
+    if (!pills || !pills.length) return "#5b6272";
+    var keys = pills.map(function(p){ return p.key; });
+    if (keys.indexOf("delivery") !== -1 || keys.indexOf("start") !== -1 || keys.indexOf("late") !== -1) return "#ff5d5d";
+    if (keys.indexOf("upcoming") !== -1) return "#4f5fe0";
+    if (keys.indexOf("none") !== -1) return "#5b6272";
+    return "#33c46a"; // ontrack / early / ontime
   }
 
   /* ============================== Status-history hover popup (2026-09-23) ==============================
@@ -2843,14 +3183,14 @@
      Measure's own zoomIn/zoomOut/zoomFit buttons in source.html use, and a
      "Reset view" button that just re-runs planFitToView -- the same
      fit-to-screen-centred transform the plan already opens with). Also,
-     per Andrew's 4th ask, a plain tap/click on a marker now opens the real
-     Set Schedule dialog directly (onPlanTap delegates straight to
-     onPlanRightClickOrLongPress, the exact same function/dialog the right-
-     click and long-press paths already used) instead of only showing a
-     read-only summary toast -- that "accidental-tap safety" behavior was a
-     previous disclosed design choice, and this explicit request overrides
-     it. Right-click and long-press are left working exactly as before
-     (now simply a redundant second way to reach the same dialog). */
+     per Andrew's 4th ask (2026-09-23), a plain tap/click on a marker used to
+     open the real Set Schedule dialog directly. (2026-09-26, v8, family
+     schema §6) That request is explicitly REVERSED this round: a plain
+     tap/press now shows a read-only status summary again (onPlanTap /
+     showPlanTapSummary), and right-click/long-press
+     (onPlanRightClickOrLongPress) opens a 3-button marker menu instead of
+     jumping straight to the dialog -- see the marker-menu code further
+     down for the current behaviour. */
   function roomlinkDisplayText(obj){
     return obj.joineryCode || obj.roomName || "";
   }
@@ -2976,7 +3316,12 @@
       var dot = document.createElementNS(SVG_NS, "circle");
       dot.setAttribute("class", "marker-dot");
       dot.setAttribute("cx", obj.x); dot.setAttribute("cy", obj.y); dot.setAttribute("r", r);
-      dot.setAttribute("fill", obj.color || (inScope ? "#4f5fe0" : "#5b6272"));
+      // (2026-09-26, v8, family schema §6) Marker colour is now
+      // delay-status-driven for in-scope markers instead of the saved
+      // room-type colour (obj.color, no longer read at all here) --
+      // __markerColor is computed once per plan open, see
+      // openPlanCanvasForLevel below.
+      dot.setAttribute("fill", inScope ? (obj.__markerColor || "#5b6272") : "#5b6272");
       dot.setAttribute("stroke", "#fff"); dot.setAttribute("stroke-width", Math.max(1, r * 0.08));
       dot.setAttribute("data-marker-id", obj.id);
       g.appendChild(dot);
@@ -3128,49 +3473,118 @@
       })[0] || null;
     });
   }
-  // A plain tap/click on a marker: Andrew's explicit request (2026-09-23,
-  // verbatim: "mouse click on plan to change the dates") -- open the real
-  // Set Schedule dialog directly, the exact same one right-click/long-press
-  // already opens, by delegating straight to onPlanRightClickOrLongPress.
-  // PREVIOUS behavior (kept only in this comment for the record): a plain
-  // tap used to show a read-only status/schedule summary toast instead, as
-  // a disclosed "accidental-tap safety" design choice so a stray tap could
-  // never open an edit dialog by accident. Andrew's request above
-  // explicitly overrides that default -- right-click and long-press still
-  // work exactly as before, so this is simply a second, more direct way to
-  // reach the same dialog now.
-  function onPlanTap(worldX, worldY){
-    onPlanRightClickOrLongPress(worldX, worldY);
-  }
-  function onPlanRightClickOrLongPress(worldX, worldY){
-    var hit = planMarkerAt(worldX, worldY);
-    if (!hit){ return; }
-    planFindItemForMarker(hit).then(function(item){
-      if (!item){ showToast((hit.roomName || "") + (hit.joineryCode ? " · " + hit.joineryCode : "") + " — no matching item record found."); return; }
-      // Solid Surface scoping (see filterSolidSurfaceItems/the top-of-file
-      // comment): a marker for an item that isn't flagged hasSolidSurface
-      // is still shown (muted, see planRenderMarkers) for plan-navigation
-      // context, but tapping/right-clicking/long-pressing it here must not
-      // open this app's own Set Schedule dialog for it.
-      if (item.hasSolidSurface !== true){
-        showToast((hit.roomName || "") + (hit.joineryCode ? " · " + hit.joineryCode : "") + " — not flagged for Solid Surface; nothing to schedule here.");
-        return;
-      }
-      // The just-saved record is applied to whichever table screen we came
-      // from IN PLACE (applyScheduleChangeToRows, via the Save/Clear
-      // handlers) -- no folder re-read; the table already reflects it the
-      // moment the visitor navigates back. (2026-09-25, sweep -- v6: this
-      // used to re-read the whole project, or from the Overall Schedule's
-      // plan EVERY project, after every Save.)
-      return openScheduleModal(planActiveProjectHandle, planActiveProjectName, item, null);
-    }).catch(function(err){
-      // (2026-09-25, sweep -- v6) Used to be an unhandled rejection with no
-      // feedback when joinery-items.json couldn't be read.
-      console.error("Opening the Set Schedule dialog from the plan failed:", err);
-      planItemsP = null; // so the next tap re-reads rather than reusing a failed read
-      showToast(isReadFailed(err) ? "Couldn't read this project's items (still syncing?) — try again." : "Couldn't open the schedule dialog — try again.");
+  // Builds one full enriched row for a single plan item, the same shape
+  // buildEnrichedRows gives the tables -- used by the tap summary, the
+  // marker menu (job-note gating) and its "Open item" button. Cheap enough
+  // to call per marker action: each read is soft/cached the same way the
+  // tables' own loads are.
+  function buildRowForPlanItem(item){
+    return Promise.all([
+      readJoineryStatuses(planActiveProjectHandle),
+      readJoinerySchedule(planActiveProjectHandle),
+      readMachiningFlags(planActiveProjectHandle),
+      readSolidSurfaceCompletionForList(planActiveProjectHandle)
+    ]).then(function(res){
+      return buildEnrichedRows([item], res[0], res[1], planActiveProjectName, planActiveProjectHandle, res[2], res[3])[0];
     });
   }
+  // Shared front door for both onPlanTap and onPlanRightClickOrLongPress
+  // below -- finds the tapped marker's item, applies the Solid Surface
+  // scoping toast (out-of-scope markers still show for plan-navigation
+  // context, per filterSolidSurfaceItems' own comment, but neither the tap
+  // summary nor the marker menu opens for one), and resolves the item's
+  // full row. Resolves null (already toasted) when there's nothing to show.
+  function planResolveItemAndRow(worldX, worldY){
+    var hit = planMarkerAt(worldX, worldY);
+    if (!hit) return Promise.resolve(null);
+    return planFindItemForMarker(hit).then(function(item){
+      if (!item){ showToast((hit.roomName || "") + (hit.joineryCode ? " · " + hit.joineryCode : "") + " — no matching item record found."); return null; }
+      if (item.hasSolidSurface !== true){
+        showToast((hit.roomName || "") + (hit.joineryCode ? " · " + hit.joineryCode : "") + " — not flagged for Solid Surface; nothing to schedule here.");
+        return null;
+      }
+      return buildRowForPlanItem(item).then(function(row){ return { item: item, row: row }; });
+    });
+  }
+  // (2026-09-26, v8, family schema §6) A plain tap/press on a marker now
+  // shows a READ-ONLY status summary -- reviving the "toast" behaviour a
+  // plain tap used to have before Andrew's 2026-09-23 "mouse click to
+  // change dates" request retired it (see this file's own history/git
+  // comments for that old wording) -- item id (room/joinery code), current
+  // joinery status, and current schedule dates if set. Long-press/
+  // right-click (onPlanRightClickOrLongPress below) is now the only way to
+  // reach an editing action from the plan.
+  function showPlanTapSummary(row){
+    var idLabel = (row.room || "") + (row.joineryId ? " · " + row.joineryId : "");
+    var parts = [idLabel, "Status: " + joineryStatusLabel(row.statusKey)];
+    if (row.requiredDeliveryDate){
+      parts.push("Required delivery: " + formatDateDisplay(row.requiredDeliveryDate));
+      if (row.manufactureStartDate) parts.push("Manufacture start: " + formatDateDisplay(row.manufactureStartDate));
+    } else {
+      parts.push("No schedule set yet.");
+    }
+    showToast(parts.join(" — "), 4000);
+  }
+  function onPlanTap(worldX, worldY){
+    planResolveItemAndRow(worldX, worldY).then(function(res){
+      if (!res) return;
+      showPlanTapSummary(res.row);
+    }).catch(function(err){
+      console.error("Reading this item's status for the plan tap summary failed:", err);
+      planItemsP = null;
+      showToast(isReadFailed(err) ? "Couldn't read this item's records (still syncing?) — try again." : "Couldn't read this item's status — try again.");
+    });
+  }
+  // (2026-09-26, v8, family schema §6) Long-press (and real right-click,
+  // below) now opens a 3-button popup instead of jumping straight to the
+  // Set Schedule dialog: "Edit delivery date" (that same dialog),
+  // "Open job note" (only shown when the item actually has one) and
+  // "Open item" (the Joinery Item page, part D).
+  function onPlanRightClickOrLongPress(worldX, worldY){
+    planResolveItemAndRow(worldX, worldY).then(function(res){
+      if (!res) return;
+      showPlanMarkerMenu(res.item, res.row);
+    }).catch(function(err){
+      console.error("Opening the marker menu failed:", err);
+      planItemsP = null; // so the next tap re-reads rather than reusing a failed read
+      showToast(isReadFailed(err) ? "Couldn't read this item's records (still syncing?) — try again." : "Couldn't open the menu — try again.");
+    });
+  }
+  var markerMenuBackdrop = document.getElementById("markerMenuBackdrop");
+  var markerMenuTitle = document.getElementById("markerMenuTitle");
+  var markerMenuEditBtn = document.getElementById("markerMenuEditBtn");
+  var markerMenuJobNoteBtn = document.getElementById("markerMenuJobNoteBtn");
+  var markerMenuOpenItemBtn = document.getElementById("markerMenuOpenItemBtn");
+  var markerMenuCancelBtn = document.getElementById("markerMenuCancelBtn");
+  var markerMenuTarget = null; // { item, row }
+  function showPlanMarkerMenu(item, row){
+    markerMenuTarget = { item: item, row: row };
+    markerMenuTitle.textContent = (item.room || "") + (item.joineryId ? " · " + item.joineryId : "");
+    markerMenuJobNoteBtn.hidden = !row.jobNote;
+    markerMenuBackdrop.hidden = false;
+  }
+  function hidePlanMarkerMenu(){ markerMenuBackdrop.hidden = true; markerMenuTarget = null; }
+  markerMenuCancelBtn.addEventListener("click", hidePlanMarkerMenu);
+  markerMenuBackdrop.addEventListener("click", function(e){ if (e.target === markerMenuBackdrop) hidePlanMarkerMenu(); });
+  markerMenuEditBtn.addEventListener("click", function(){
+    var t = markerMenuTarget; hidePlanMarkerMenu();
+    if (!t) return;
+    // The just-saved record is applied to whichever table screen we came
+    // from IN PLACE (applyScheduleChangeToRows, via the Save/Clear
+    // handlers) -- no folder re-read; the table already reflects it the
+    // moment the visitor navigates back.
+    openScheduleModal(planActiveProjectHandle, planActiveProjectName, t.item, null);
+  });
+  markerMenuJobNoteBtn.addEventListener("click", function(){
+    var t = markerMenuTarget; hidePlanMarkerMenu();
+    if (!t) return;
+    openJobNoteDialogForRow(t.row);
+  });
+  markerMenuOpenItemBtn.addEventListener("click", function(){
+    var t = markerMenuTarget; hidePlanMarkerMenu();
+    if (!t) return;
+    openJoineryItemPage(t.row, "planCanvas");
+  });
 
   function openPlanCanvasForLevel(projectHandle, projectName, levelName, returnScreen){
     planActiveProjectHandle = projectHandle;
@@ -3184,10 +3598,20 @@
     planItemsP = readJoineryItems(projectHandle); // once per plan open, reused by every marker tap -- see planFindItemForMarker
     return Promise.all([
       readLevelFile(projectHandle, projectName, levelName),
-      planItemsP
+      planItemsP,
+      // (2026-09-26, v8, family schema §6) Marker colour is delay-driven --
+      // read the same soft, whole-project lists the tables use, once per
+      // plan open (not once per marker), and fold them through
+      // buildEnrichedRows below to get every in-scope item's delayPills in
+      // one pass.
+      readJoineryStatuses(projectHandle),
+      readJoinerySchedule(projectHandle),
+      readMachiningFlags(projectHandle),
+      readSolidSurfaceCompletionForList(projectHandle)
     ]).then(function(res){
       var level = res[0];
       var items = res[1];
+      var statusList = res[2], scheduleList = res[3], machiningFlagsList = res[4], completionList = res[5];
       // Solid Surface scoping for the plan viewer (see filterSolidSurfaceItems/
       // the top-of-file comment): tag every marker with whether its matching
       // joinery-items.json record has hasSolidSurface===true, so
@@ -3195,10 +3619,13 @@
       // onPlanRightClickOrLongPress can refuse to open a schedule dialog for
       // them, without hiding them outright (kept for plan-navigation context).
       var solidSurfaceKeys = {};
-      items.forEach(function(it){
-        if (it && it.hasSolidSurface === true){
-          solidSurfaceKeys[(it.level || "") + "\u0001" + (it.room || "") + "\u0001" + (it.joineryId || "")] = true;
-        }
+      var solidSurfaceItems = items.filter(function(it){ return it && it.hasSolidSurface === true; });
+      solidSurfaceItems.forEach(function(it){
+        solidSurfaceKeys[(it.level || "") + "\u0001" + (it.room || "") + "\u0001" + (it.joineryId || "")] = true;
+      });
+      var colorByKey = {};
+      buildEnrichedRows(solidSurfaceItems, statusList, scheduleList, projectName, projectHandle, machiningFlagsList, completionList).forEach(function(row){
+        colorByKey[(row.level || "") + "\u0001" + (row.room || "") + "\u0001" + (row.joineryId || "")] = planMarkerColorForDelay(row.delayPills);
       });
       // Same roomlink filter every ITP app already applies (type==="roomlink",
       // not hidden, a real roomName) -- this app's own reader used to pass
@@ -3208,7 +3635,9 @@
         return o && o.type === "roomlink" && !o.hidden && typeof o.roomName === "string" && o.roomName;
       }) : [];
       markers.forEach(function(m){
-        m.__solidSurface = !!solidSurfaceKeys[levelName + "\u0001" + (m.roomName || "") + "\u0001" + (m.joineryCode || "")];
+        var key = levelName + "\u0001" + (m.roomName || "") + "\u0001" + (m.joineryCode || "");
+        m.__solidSurface = !!solidSurfaceKeys[key];
+        m.__markerColor = colorByKey[key] || "#5b6272";
       });
       planSaved = {
         imageDataURL: level ? level.imageDataURL : null,
@@ -3695,7 +4124,11 @@
   }
 
   /* ============================== enriched row building (shared by both tables) ============================== */
-  function buildEnrichedRows(items, statusList, scheduleList, projectName, projectHandle, machiningFlagsList){
+  // (2026-09-26, v8) completionList is an optional 7th argument, same
+  // convention as machiningFlagsList's own 6th-argument addition -- existing
+  // test callers that omit it still work unchanged (findSolidSurfaceCompletionRecord
+  // treats a missing/undefined list as "no record found").
+  function buildEnrichedRows(items, statusList, scheduleList, projectName, projectHandle, machiningFlagsList, completionList){
     var today = todayDateStr();
     return items.map(function(item){
       var statusRec = findJoineryStatus(statusList, item.level, item.room, item.joineryId) || {};
@@ -3719,7 +4152,16 @@
       // computeDelayInfo needs actualDeliveredAt (see its own comment) to
       // decide whether the item's already been delivered and should show
       // an early/late/on-time outcome instead of a before-the-fact flag.
-      var delay = computeDelayInfo(schedRec, statusKey, today, actualDeliveredAt);
+      // (2026-09-26, v8, schema §3) Now an ARRAY of 1-2 pills -- see
+      // computeDelayInfo's own comment.
+      var delayPills = computeDelayInfo(schedRec, statusKey, today, actualDeliveredAt);
+      // (2026-09-26, v8, schema §1) This app's OWN new "Completed"/
+      // "Delivered" event-sourced flags -- completely separate from
+      // joinery-status.json's shared pipeline and from actualDeliveredAt
+      // above (which is driven ONLY by that shared file, per schema §1's
+      // "nothing here touches the shared delivered status or the existing
+      // 'Actual delivery' column" instruction).
+      var completionRec = findSolidSurfaceCompletionRecord(completionList || [], item.level, item.room, item.joineryId);
       return {
         project: projectName,
         projectHandle: projectHandle,
@@ -3735,9 +4177,14 @@
         manufactureLeadTimeDays: schedRec ? schedRec.manufactureLeadTimeDays : null,
         manufactureStartDate: schedRec ? schedRec.manufactureStartDate : "",
         cutStatus: cutStatus,
-        delayKey: delay.key,
-        delayLabel: delay.label,
-        delaySeverity: delay.severity,
+        delayPills: delayPills,
+        delayKeys: delayPills.map(function(p){ return p.key; }),
+        delaySeverity: delayPills.reduce(function(m, p){ return Math.max(m, p.severity); }, 0),
+        completionRec: completionRec,
+        completedAt: completionRec && completionRec.completed ? completionRec.completed.at : "",
+        completedBy: completionRec && completionRec.completed ? completionRec.completed.by : "",
+        ssDeliveredAt: completionRec && completionRec.delivered ? completionRec.delivered.at : "",
+        ssDeliveredBy: completionRec && completionRec.delivered ? completionRec.delivered.by : "",
         // Presence/metadata flags only (2026-09-24) -- set by Site Measure
         // or the Viewer when a job note PDF is added, riding along on this
         // SAME joinery-status.json record already fetched above. See
@@ -3768,8 +4215,10 @@
     var r = Object.assign({}, o);
     r.projectHandle = null;
     var sched = r.requiredDeliveryDate ? { requiredDeliveryDate: r.requiredDeliveryDate, manufactureStartDate: r.manufactureStartDate || "" } : null;
-    var d = computeDelayInfo(sched, r.statusKey, today, r.actualDeliveredAt);
-    r.delayKey = d.key; r.delayLabel = d.label; r.delaySeverity = d.severity;
+    var pills = computeDelayInfo(sched, r.statusKey, today, r.actualDeliveredAt);
+    r.delayPills = pills;
+    r.delayKeys = pills.map(function(p){ return p.key; });
+    r.delaySeverity = pills.reduce(function(m, p){ return Math.max(m, p.severity); }, 0);
     return r;
   }
   function rowsFromSnapshot(list){
@@ -3792,8 +4241,31 @@
       row.requiredDeliveryDate = rec ? rec.requiredDeliveryDate : "";
       row.manufactureLeadTimeDays = rec ? rec.manufactureLeadTimeDays : null;
       row.manufactureStartDate = rec ? rec.manufactureStartDate : "";
-      var d = computeDelayInfo(rec, row.statusKey, today, row.actualDeliveredAt);
-      row.delayKey = d.key; row.delayLabel = d.label; row.delaySeverity = d.severity;
+      var pills = computeDelayInfo(rec, row.statusKey, today, row.actualDeliveredAt);
+      row.delayPills = pills;
+      row.delayKeys = pills.map(function(p){ return p.key; });
+      row.delaySeverity = pills.reduce(function(m, p){ return Math.max(m, p.severity); }, 0);
+      return true;
+    }
+    var touchedOverall = false, touchedProj = false;
+    overallAllRows.forEach(function(row){ if (patch(row)) touchedOverall = true; });
+    projAllRows.forEach(function(row){ if (patch(row)) touchedProj = true; });
+    if (touchedOverall){ renderOverallTable(); snapSet("overall", null, { projects: overallProjectNames, rows: overallAllRows.map(rowToSnapshot) }); }
+    if (touchedProj){ renderProjTable(); snapSet("project", activeProjectName, { rows: projAllRows.map(rowToSnapshot), planLevels: projPlanLevels }); }
+  }
+  // (2026-09-26, v8, schema §1) After a Completed/Delivered button write the
+  // folded record is known exactly (setSolidSurfaceCompletionFlag/
+  // performCompletionAction already resolved it) -- patch the matching row
+  // in place in whichever tables hold it, same zero-re-read convention as
+  // applyScheduleChangeToRows above.
+  function applyCompletionChangeToRows(projectName, item, rec){
+    function patch(row){
+      if (row.project !== projectName || row.level !== item.level || (row.room || "") !== (item.room || "") || (row.joineryId || "") !== (item.joineryId || "")) return false;
+      row.completionRec = rec;
+      row.completedAt = rec && rec.completed ? rec.completed.at : "";
+      row.completedBy = rec && rec.completed ? rec.completed.by : "";
+      row.ssDeliveredAt = rec && rec.delivered ? rec.delivered.at : "";
+      row.ssDeliveredBy = rec && rec.delivered ? rec.delivered.by : "";
       return true;
     }
     var touchedOverall = false, touchedProj = false;
@@ -3805,8 +4277,9 @@
   function scheduleCompare(a, b, sort){
     var col = sort.col;
     var cmp;
-    if (col === "requiredDeliveryDate" || col === "manufactureStartDate" || col === "actualDeliveredAt"){
-      var av = a[col] || "", bv = b[col] || "";
+    if (col === "requiredDeliveryDate" || col === "manufactureStartDate" || col === "actualDeliveredAt" || col === "completed" || col === "ssDelivered"){
+      var field = col === "completed" ? "completedAt" : col === "ssDelivered" ? "ssDeliveredAt" : col;
+      var av = a[field] || "", bv = b[field] || "";
       if (!av && !bv) cmp = 0;
       else if (!av) return 1;   // unset always sorts last, regardless of direction
       else if (!bv) return -1;
@@ -3829,29 +4302,72 @@
     cmp = av2 < bv2 ? -1 : (av2 > bv2 ? 1 : 0);
     return sort.dir === "desc" ? -cmp : cmp;
   }
+  // A single Completed/Delivered toggle button (schema §1: "same setup as
+  // the carcase cut on the machine schedule" -- ported from Machine
+  // Schedule's own cutCellHtml, minus the Done/N/A PAIR since these two
+  // flags are simple two-state (pending/done) mark/unmark buttons, not
+  // three-way). "Completed" (part B's own date-or-dash column) is
+  // satisfied by the meta line below the button once it's set; pending
+  // shows just the plain button, same as an unset cut.
+  function completionCellHtml(rowLike, flag){
+    var rec = rowLike.completionRec;
+    var info = (rec && rec[flag]) || {};
+    var done = info.state === "done";
+    var label = flag === "completed" ? "Completed" : "Delivered";
+    var lockTitle = done ? " title=\"Locked — enter your PIN to change\"" : "";
+    var meta = "";
+    if (done && (info.by || info.at)){
+      meta = "<div class=\"cut-meta\">" + (info.by ? escapeHtml(info.by) : "") + (info.by && info.at ? ", " : "") + (info.at ? escapeHtml(formatHistoryDateOnly(info.at)) : "") + " 🔒</div>";
+    }
+    return "<div class=\"cut-group" + (done ? " cut-locked" : "") + "\">" +
+      "<button type=\"button\" class=\"cut-btn cut-done" + (done ? " active" : "") + "\" data-flag=\"" + flag + "\"" + lockTitle + ">" + (done ? "✓ " + label : label) + "</button>" +
+      "</div>" + meta;
+  }
+  // 1-2 pills side by side (schema §3) -- see computeDelayInfo's own comment.
+  function delayPillsHtml(pills){
+    if (!pills || !pills.length) return "<span class=\"delay-pill delay-none\">No schedule set</span>";
+    return pills.map(function(p){ return "<span class=\"delay-pill delay-" + p.key + "\">" + escapeHtml(p.label) + "</span>"; }).join(" ");
+  }
+  // (2026-09-26, v8) Column order per the family schema doc §2/§C: the
+  // first 5/6 identifying columns (sticky, see the "sticky-col" CSS/schema
+  // §5) are unchanged; the schedule-date block is REORDERED to
+  // manufactureStartDate -> leadTime -> requiredDeliveryDate (relabelled
+  // "Required Delivery Date") -> actualDeliveredAt; the two new "Completed"/
+  // "SS Delivered" columns (part B) sit right after that block, before
+  // Status/cut-status/Delay (part B's own suggested position, kept here --
+  // see this app's own report for the reasoning); the reordered/added
+  // columns are never part of the sticky/frozen set (only Work order # and
+  // earlier are, per schema §5).
   function scheduleRowCells(row, showProject){
-    return (showProject ? "<td>" + escapeHtml(row.project) + "</td>" : "") +
-      "<td>" + escapeHtml(row.level) + "</td>" +
-      "<td>" + escapeHtml(row.room) + "</td>" +
-      "<td>" + escapeHtml(row.joineryId) + "</td>" +
-      "<td class=\"wrap\">" + escapeHtml(row.description) + "</td>" +
-      "<td>" + (row.workOrderNo ? escapeHtml(row.workOrderNo) : "<span class=\"muted-cell\">—</span>") + "</td>" +
-      "<td>" + (row.requiredDeliveryDate ? escapeHtml(formatDateDisplay(row.requiredDeliveryDate)) : "<span class=\"muted-cell\">—</span>") + "</td>" +
-      "<td>" + (row.actualDeliveredAt ? escapeHtml(formatHistoryDateOnly(row.actualDeliveredAt)) : "<span class=\"muted-cell\">—</span>") + "</td>" +
+    return (showProject ? "<td class=\"sticky-col\">" + escapeHtml(row.project) + "</td>" : "") +
+      "<td class=\"sticky-col\">" + escapeHtml(row.level) + "</td>" +
+      "<td class=\"sticky-col\">" + escapeHtml(row.room) + "</td>" +
+      "<td class=\"sticky-col\">" + escapeHtml(row.joineryId) + "</td>" +
+      "<td class=\"sticky-col wrap\">" + escapeHtml(row.description) + "</td>" +
+      "<td class=\"sticky-col sticky-col-last\">" + (row.workOrderNo ? escapeHtml(row.workOrderNo) : "<span class=\"muted-cell\">—</span>") + "</td>" +
       "<td>" + (row.manufactureStartDate ? escapeHtml(formatDateDisplay(row.manufactureStartDate)) : "<span class=\"muted-cell\">—</span>") + "</td>" +
       "<td>" + (row.manufactureLeadTimeDays != null ? row.manufactureLeadTimeDays + "d" : "<span class=\"muted-cell\">—</span>") + "</td>" +
+      "<td>" + (row.requiredDeliveryDate ? escapeHtml(formatDateDisplay(row.requiredDeliveryDate)) : "<span class=\"muted-cell\">—</span>") + "</td>" +
+      "<td>" + (row.actualDeliveredAt ? escapeHtml(formatHistoryDateOnly(row.actualDeliveredAt)) : "<span class=\"muted-cell\">—</span>") + "</td>" +
+      "<td class=\"completion-cell\">" + completionCellHtml(row, "completed") + "</td>" +
+      "<td class=\"completion-cell\">" + completionCellHtml(row, "delivered") + "</td>" +
       "<td class=\"status-cell\">" + statusLabelHtml(row.statusKey) + "</td>" +
       "<td>" + (row.cutStatus ? escapeHtml(row.cutStatus) : "<span class=\"muted-cell\">—</span>") + "</td>" +
-      "<td><span class=\"delay-pill delay-" + row.delayKey + "\">" + escapeHtml(row.delayLabel) + "</span></td>" +
-      // "Open job note" (2026-09-24) -- FIRST button, between Delay and
-      // View on plan, per Andrew's own verbatim placement. Only rendered
-      // when this row's own status record actually carries jobNote:true
-      // (see buildEnrichedRows above) -- an item with no note gets no
-      // button at all, rather than a dead-end "no notes yet" dialog on
-      // every single row.
-      "<td class=\"row-actions\">" + (row.jobNote ? "<button type=\"button\" class=\"btn secondary sm jobnote-btn\">Open job note</button>" : "") + "<button type=\"button\" class=\"btn secondary sm view-plan-btn\">View on plan</button><button type=\"button\" class=\"btn secondary sm edit-sched-btn\">Edit schedule</button></td>";
+      "<td>" + delayPillsHtml(row.delayPills) + "</td>" +
+      // "Open item" (2026-09-26, v8, part D) leads the row-actions cell,
+      // same class/wiring as Machine Schedule's and the main Scheduler's own
+      // button; "Open job note" (2026-09-24) still comes next, only
+      // rendered when this row's own status record actually carries
+      // jobNote:true (see buildEnrichedRows above) -- an item with no note
+      // gets no button at all, rather than a dead-end "no notes yet" dialog
+      // on every single row.
+      "<td class=\"row-actions\">" +
+        "<button type=\"button\" class=\"btn secondary sm open-item-btn\">Open item</button>" +
+        (row.jobNote ? "<button type=\"button\" class=\"btn secondary sm jobnote-btn\">Open job note</button>" : "") +
+        "<button type=\"button\" class=\"btn secondary sm view-plan-btn\">View on plan</button><button type=\"button\" class=\"btn secondary sm edit-sched-btn\">Edit schedule</button></td>";
   }
   function wireRowActions(tr, row, returnScreen){
+    var openItemBtn = tr.querySelector(".open-item-btn");
     var jobNoteBtn = tr.querySelector(".jobnote-btn");
     var viewBtn = tr.querySelector(".view-plan-btn");
     var editBtn = tr.querySelector(".edit-sched-btn");
@@ -3866,6 +4382,11 @@
         showToast("Couldn't open that project's folder — tap Refresh and try again.");
       });
     }
+    // "Open item" (2026-09-26, v8, part D) -- ported verbatim from Machine
+    // Schedule's / the main Scheduler's own row-actions button.
+    openItemBtn.addEventListener("click", function(){
+      withHandle(function(){ openJoineryItemPage(row, returnScreen); });
+    });
     if (jobNoteBtn){
       jobNoteBtn.addEventListener("click", function(){
         withHandle(function(){ openJobNoteDialogForRow(row); });
@@ -3879,6 +4400,30 @@
       // the Save/Clear handlers (applyScheduleChangeToRows) -- no
       // whole-project re-read here any more (2026-09-25, sweep -- v6).
       withHandle(function(h){ return openScheduleModal(h, row.project, row.rawItem, null); });
+    });
+    // "Completed"/"Delivered" buttons (2026-09-26, v8, schema §1/part A) --
+    // same performCompletionAction front door the plan canvas would use if
+    // it had one (it doesn't -- these two flags have no plan-marker panel),
+    // so "requires sign-in", "tap the active button to revert to Pending"
+    // and the PIN lockout all live in one place. The single button of each
+    // flag is disabled while its own write is in flight so a double tap
+    // can't file two events (mirrors Machine Schedule's cut buttons, which
+    // disable in PAIRS -- there is only one button per flag here).
+    Array.prototype.forEach.call(tr.querySelectorAll(".completion-cell .cut-btn"), function(btn){
+      btn.addEventListener("click", function(){
+        if (btn.disabled) return;
+        var flag = btn.getAttribute("data-flag");
+        var currentState = (row.completionRec && row.completionRec[flag] && row.completionRec[flag].state) || "pending";
+        btn.disabled = true;
+        withHandle(function(h){
+          return performCompletionAction(h, row.level, row.room, row.joineryId, flag, currentState, "done").then(function(result){
+            if (result === null) return; // blocked (no sign-in) / cancelled / errored -- already toasted
+            applyCompletionChangeToRows(row.project, row, result.rec);
+          });
+        }).then(function(){
+          btn.disabled = false; // no-op if the row was re-rendered; harmless
+        });
+      });
     });
     // Status-history hover/tap popup (2026-09-23) -- see showStatusHistoryPop
     // above. Hover opens/closes it on desktop; a plain click/tap toggles it,
@@ -3942,6 +4487,72 @@
     });
   }
 
+  /* ============================== Joinery item page (2026-09-26, v8, part D) ==============================
+     Opened from any row's "Open item" button (wireRowActions above) and
+     from the plan-canvas marker menu's own "Open item" button (below) --
+     ported from Machine Schedule's/the main Scheduler's own
+     openJoineryItemPage, scoped down to what this app already has (see
+     this section's own HTML comment for why). */
+  var joineryItemTitle = document.getElementById("joineryItemTitle");
+  var joineryItemMetaGrid = document.getElementById("joineryItemMetaGrid");
+  var backFromJoineryItemBtn = document.getElementById("backFromJoineryItemBtn");
+  var jiViewOnPlanBtn = document.getElementById("jiViewOnPlanBtn");
+  var jiJobNoteBtn = document.getElementById("jiJobNoteBtn");
+  var activeJoineryItemRow = null;
+  var joineryItemReturnScreen = "home";
+  // true when this page was opened from the plan canvas's own marker menu
+  // (see showPlanMarkerMenu below) -- the plan overlay is only HIDDEN, not
+  // torn down, while this page is showing, so Back/"View on plan" simply
+  // reveals it again instead of a wasted re-read through openPlanCanvasForLevel.
+  var joineryItemReturnToPlan = false;
+  function renderJoineryItemMetaGrid(row){
+    joineryItemMetaGrid.innerHTML =
+      "<dt>Project</dt><dd>" + escapeHtml(row.project) + "</dd>" +
+      "<dt>Level</dt><dd>" + escapeHtml(row.level) + "</dd>" +
+      "<dt>Room</dt><dd>" + escapeHtml(row.room) + "</dd>" +
+      "<dt>Description</dt><dd>" + escapeHtml(row.description || "(none)") + "</dd>" +
+      "<dt>Work order #</dt><dd>" + (row.workOrderNo ? escapeHtml(row.workOrderNo) : "—") + "</dd>" +
+      "<dt>Status</dt><dd>" + statusLabelHtml(row.statusKey) + "</dd>" +
+      "<dt>SS manufacture start</dt><dd>" + (row.manufactureStartDate ? escapeHtml(formatDateDisplay(row.manufactureStartDate)) : "—") + "</dd>" +
+      "<dt>SS lead time</dt><dd>" + (row.manufactureLeadTimeDays != null ? row.manufactureLeadTimeDays + "d" : "—") + "</dd>" +
+      "<dt>Required Delivery Date</dt><dd>" + (row.requiredDeliveryDate ? escapeHtml(formatDateDisplay(row.requiredDeliveryDate)) : "—") + "</dd>" +
+      "<dt>Actual delivery</dt><dd>" + (row.actualDeliveredAt ? escapeHtml(formatHistoryDateOnly(row.actualDeliveredAt)) : "—") + "</dd>" +
+      "<dt>Completed</dt><dd>" + (row.completedAt ? escapeHtml(formatHistoryDateOnly(row.completedAt)) + (row.completedBy ? " — " + escapeHtml(row.completedBy) : "") : "—") + "</dd>" +
+      "<dt>SS Delivered</dt><dd>" + (row.ssDeliveredAt ? escapeHtml(formatHistoryDateOnly(row.ssDeliveredAt)) + (row.ssDeliveredBy ? " — " + escapeHtml(row.ssDeliveredBy) : "") : "—") + "</dd>" +
+      "<dt>Delay</dt><dd>" + delayPillsHtml(row.delayPills) + "</dd>";
+    jiJobNoteBtn.hidden = !row.jobNote;
+  }
+  function openJoineryItemPage(row, returnScreen){
+    activeJoineryItemRow = row;
+    joineryItemReturnScreen = returnScreen || "home";
+    joineryItemReturnToPlan = (returnScreen === "planCanvas");
+    if (joineryItemReturnToPlan) planCanvasScreen.hidden = true;
+    joineryItemTitle.textContent = row.joineryId ? row.joineryId : "(no ID)";
+    renderJoineryItemMetaGrid(row);
+    showScreen("joineryItem");
+  }
+  function closeJoineryItemPage(){
+    // The plan-canvas overlay isn't one of the `screens` map's entries
+    // (openPlanCanvasForLevel manages its own hidden state/history), so
+    // unlike the showScreen(...) branch below, this early return has to
+    // hide the Joinery Item screen itself -- a bug caught by this app's own
+    // v8 test suite: without this line the item screen stayed visible ON
+    // TOP of the just-revealed plan underneath it.
+    if (joineryItemReturnToPlan){ screens.joineryItem.hidden = true; planCanvasScreen.hidden = false; navRecord("planCanvas"); return; }
+    showScreen(joineryItemReturnScreen);
+  }
+  backFromJoineryItemBtn.addEventListener("click", closeJoineryItemPage);
+  jiViewOnPlanBtn.addEventListener("click", function(){
+    if (!activeJoineryItemRow) return;
+    if (joineryItemReturnToPlan){ closeJoineryItemPage(); return; } // the plan is already open underneath, just paused
+    var row = activeJoineryItemRow;
+    openPlanCanvasForLevel(row.projectHandle, row.project, row.level, joineryItemReturnScreen);
+  });
+  jiJobNoteBtn.addEventListener("click", function(){
+    if (!activeJoineryItemRow) return;
+    openJobNoteDialogForRow(activeJoineryItemRow);
+  });
+
   /* ============================== Overall Schedule screen ============================== */
   var overallTable = document.getElementById("overallTable");
   var overallTableBody = document.getElementById("overallTableBody");
@@ -3991,6 +4602,25 @@
     noteEl.hidden = total === 0;
     noteEl.textContent = shown === total ? (total + (total === 1 ? " item" : " items")) : ("Showing " + shown + " of " + total + " items");
   }
+  // (2026-09-26, v8, family schema §5) Measures each sticky/frozen header
+  // cell's own rendered width (the browser's table layout already sizes it
+  // to the widest cell in that column, header or body, so this is accurate
+  // the moment it's called AFTER the body rows are in the DOM) and writes
+  // the cumulative left offset of each as a CSS custom property on the
+  // <table> itself (--sc0, --sc1, ...) -- see the .sticky-col CSS rules
+  // above. Cheap (a handful of getBoundingClientRect calls, not one per
+  // row) since every cell in a column shares the same offset by
+  // construction. Called after every render (data can change column
+  // widths) and on window resize.
+  function updateStickyOffsets(tableEl){
+    if (!tableEl) return;
+    var heads = tableEl.querySelectorAll("thead th.sticky-col");
+    var acc = 0;
+    Array.prototype.forEach.call(heads, function(th, i){
+      tableEl.style.setProperty("--sc" + i, acc + "px");
+      acc += th.getBoundingClientRect().width;
+    });
+  }
   var overallHideDelivered = hideStatusCheckbox("overallHideDelivered", "utzline-solid-surface-schedule:overall:hideDelivered");
   var overallHideInstalled = hideStatusCheckbox("overallHideInstalled", "utzline-solid-surface-schedule:overall:hideInstalled");
   var overallCountNote = document.getElementById("overallCountNote");
@@ -4004,7 +4634,7 @@
     if (hiddenByStatusTicks(overallHideDelivered, overallHideInstalled, row.statusKey)) return false;
     if (overallProjectFilter.value && row.project !== overallProjectFilter.value) return false;
     if (!statusFilterMatches(overallStatusFilter.value, row.statusKey)) return false;
-    if (overallDelayFilter.value && row.delayKey !== overallDelayFilter.value) return false;
+    if (overallDelayFilter.value && row.delayKeys.indexOf(overallDelayFilter.value) === -1) return false;
     var q = overallSearchInput.value.trim().toLowerCase();
     if (q){
       var hay = ((row.joineryId || "") + " " + (row.description || "") + " " + (row.workOrderNo || "") + " " + (row.project || "")).toLowerCase();
@@ -4041,6 +4671,7 @@
         if (overallSort.dir === "desc") th.classList.add("desc");
       }
     });
+    updateStickyOffsets(overallTable);
   }
   Array.prototype.forEach.call(overallTable.querySelectorAll("th"), function(th){
     var col = th.getAttribute("data-col");
@@ -4109,12 +4740,13 @@
             readJoineryItems(projectHandle),
             readJoineryStatuses(projectHandle),
             readJoinerySchedule(projectHandle),
-            readMachiningFlags(projectHandle)
+            readMachiningFlags(projectHandle),
+            readSolidSurfaceCompletionForList(projectHandle)
           ]).then(function(res){
             // Solid Surface scoping (see filterSolidSurfaceItems/the
             // top-of-file comment): only items with hasSolidSurface===true
             // are ever built into a row here.
-            return { name: name, rows: buildEnrichedRows(filterSolidSurfaceItems(res[0]), res[1], res[2], name, projectHandle, res[3]) };
+            return { name: name, rows: buildEnrichedRows(filterSolidSurfaceItems(res[0]), res[1], res[2], name, projectHandle, res[3], res[4]) };
           });
         }).catch(function(err){
           console.error("Reading project \"" + name + "\" for the Overall Solid Surface Schedule failed:", err);
@@ -4180,7 +4812,7 @@
     if (hiddenByStatusTicks(projHideDelivered, projHideInstalled, row.statusKey)) return false;
     if (projLevelFilter.value && row.level !== projLevelFilter.value) return false;
     if (!statusFilterMatches(projStatusFilter.value, row.statusKey)) return false;
-    if (projDelayFilter.value && row.delayKey !== projDelayFilter.value) return false;
+    if (projDelayFilter.value && row.delayKeys.indexOf(projDelayFilter.value) === -1) return false;
     var q = projSearchInput.value.trim().toLowerCase();
     if (q){
       var hay = ((row.joineryId || "") + " " + (row.description || "") + " " + (row.workOrderNo || "")).toLowerCase();
@@ -4211,6 +4843,7 @@
         if (projSort.dir === "desc") th.classList.add("desc");
       }
     });
+    updateStickyOffsets(projTable);
   }
   Array.prototype.forEach.call(projTable.querySelectorAll("th"), function(th){
     var col = th.getAttribute("data-col");
@@ -4230,6 +4863,12 @@
     if (!levelPlanSelect.value) { showToast("No levels with a saved plan found for this project yet."); return; }
     openPlanCanvasForLevel(activeProjectHandle, activeProjectName, levelPlanSelect.value, "projectSchedule");
   });
+  // A viewport resize can change every column's rendered width (word-wrap
+  // in Description, font scaling, etc) -- keep the sticky offsets honest.
+  window.addEventListener("resize", debounce(function(){
+    updateStickyOffsets(overallTable);
+    updateStickyOffsets(projTable);
+  }, 150));
 
   function applyProjectScheduleState(rows, planLevels){
     projAllRows = rows;
@@ -4282,14 +4921,15 @@
         readJoineryStatuses(projectHandle),
         readJoinerySchedule(projectHandle),
         listExistingLevels(projectHandle),
-        readMachiningFlags(projectHandle)
+        readMachiningFlags(projectHandle),
+        readSolidSurfaceCompletionForList(projectHandle)
       ]);
     }).then(function(res){
       if (seq !== projLoadSeq) return; // superseded
       // Solid Surface scoping (see filterSolidSurfaceItems/the top-of-file
       // comment): only items with hasSolidSurface===true are ever built
       // into a row here.
-      var rows = buildEnrichedRows(filterSolidSurfaceItems(res[0]), res[1], res[2], projectName, projectHandle, res[4]);
+      var rows = buildEnrichedRows(filterSolidSurfaceItems(res[0]), res[1], res[2], projectName, projectHandle, res[4], res[5]);
       applyProjectScheduleState(rows, res[3]);
       projRefreshNote.hidden = true;
       snapSet("project", projectName, { rows: rows.map(rowToSnapshot), planLevels: res[3] });
@@ -4316,7 +4956,8 @@
     reconnect: document.getElementById("screenReconnect"),
     home: document.getElementById("screenHome"),
     overall: document.getElementById("screenOverall"),
-    projectSchedule: document.getElementById("screenProjectSchedule")
+    projectSchedule: document.getElementById("screenProjectSchedule"),
+    joineryItem: document.getElementById("screenJoineryItem")
   };
   function showScreen(name){
     Object.keys(screens).forEach(function(k){ screens[k].hidden = (k !== name); });
@@ -4365,6 +5006,7 @@
     if (!statusHistoryPop.hidden){ hideStatusHistoryPop(); return true; }
     var pairs = [
       ["scheduleModalBackdrop", "schedCancelBtn"], ["jobNoteViewBackdrop", "jobNoteViewCancel"],
+      ["markerMenuBackdrop", "markerMenuCancelBtn"],
       ["namePromptBackdrop", "namePromptCancel"], ["numberpadBackdrop", "numberpadCancel"],
       ["identityAppChecksBackdrop", "identityAppChecksCancel"]
     ];
@@ -4382,6 +5024,7 @@
     switch (from){
       case "planCanvas": closePlanCanvas(); break;
       case "overall": case "projectSchedule": showScreen("home"); break;
+      case "joineryItem": closeJoineryItemPage(); break;
       default: break;
     }
     // Still on the same (non-base) screen means the step back didn't
@@ -4628,6 +5271,16 @@
     snapGet: snapGet,
     getCurrentScreenName: function(){ return currentScreenName; },
     getDirHandleCacheSize: function(){ return Object.keys(dirHandleCache).length; },
+    // (2026-09-26, v8) -- Solid Surface Completion (schema §1/part A), the
+    // Joinery Item page (part D) and the plan-canvas marker menu (part H).
+    setSolidSurfaceCompletionFlag: setSolidSurfaceCompletionFlag,
+    foldSolidSurfaceCompletion: foldSolidSurfaceCompletion,
+    performCompletionAction: performCompletionAction,
+    readSolidSurfaceCompletionRecordForItem: readSolidSurfaceCompletionRecordForItem,
+    readSolidSurfaceCompletionForList: readSolidSurfaceCompletionForList,
+    findSolidSurfaceCompletionRecord: findSolidSurfaceCompletionRecord,
+    openJoineryItemPage: openJoineryItemPage,
+    planMarkerColorForDelay: planMarkerColorForDelay,
     ready: function(){ return true; }
   };
 

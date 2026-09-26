@@ -190,9 +190,13 @@
 // split off from the shared "utzline-scheduler-db"), with a best-effort
 // one-time carry-over of the persisted Projects-root folder handle from
 // the old shared database so installed copies don't have to reconnect.
-// See README v7.)
+// See README v7. v8, 2026-09-26: Completed/Delivered PIN-locked buttons +
+// new event-sourced "Solid Surface Completion" file, column reorder + two
+// new columns, "Open item" button + scoped Joinery Item page, frozen
+// identifying columns, status icon swap, new "Delivery due soon" delay
+// pill, and the plan-canvas tap/long-press behaviour change -- see README v8.)
 var ICON_VERSION = "v1";
-var CACHE_NAME = "utzline-solid-surface-schedule-cache-v7";
+var CACHE_NAME = "utzline-solid-surface-schedule-cache-v8";
 
 var PRECACHE_URLS = [
   "./",

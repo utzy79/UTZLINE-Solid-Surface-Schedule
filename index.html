@@ -320,7 +320,18 @@
     justify-content: center;
     padding: 24px 16px 60px;
   }
-  .screen{ width: 100%; max-width: 980px; }
+  /* (2026-09-26) min-width: 0 overrides a flex item's default automatic
+     min-width, which is otherwise its own max-content size -- for
+     .screen.wide-table that meant .sched-table's forced min-width
+     propagated all the way up through .card and .screen, so .screen itself
+     grew wider than main's available space instead of .table-scroll ever
+     actually overflowing (the root cause behind Machine Schedule's and
+     Scheduler's own identical "no way to scroll across on windows"
+     report -- same layout pattern here, same fix). With .screen properly
+     shrinking to main's width, .table-scroll's own overflow-x:auto becomes
+     the genuine, always-visible, native scrollbar, and the sticky columns
+     below freeze relative to the right scrolling ancestor. */
+  .screen{ width: 100%; max-width: 980px; min-width: 0; }
   .screen[hidden]{ display: none; }
   .screen.narrow{ max-width: 640px; }
   /* Full-width table screens (2026-09-23): Andrew, verbatim -- "Where there
@@ -562,32 +573,47 @@
   .cut-meta{ color: var(--muted); font-size: 10px; margin-top: 3px; }
   /* ---- Frozen (sticky) identifying columns + this app's OWN existing
      horizontal scroll bar (.table-scroll, above) (2026-09-26, v8, family
-     schema §5). Every column up to and including Work order # (the
-     identifying columns, schema §2) stays pinned via position:sticky with
-     a solid background matching this table's own row/hover background, so
-     text scrolled underneath never shows through, and a right-hand
-     border/shadow on the LAST frozen column (Work order #, tagged
-     "sticky-col-last") marks the freeze boundary -- the scroll bar then
-     only visibly scrolls the reordered schedule-date block onward. The
-     trailing row-actions column is left scrolling with the rest (schema
-     §5's own "simplest, safest default"). Left offsets are per-column
-     PIXEL WIDTHS, which vary with content/viewport, so they're computed at
-     render time (updateStickyOffsets, one CSS custom property per column
-     set on the <table> itself) rather than hard-coded -- see that
-     function's own comment. Overall's table has 6 sticky columns (Project
-     leads it); the per-project table has 5 (no Project column) -- both
-     tables share the same --sc0.."--sc5 custom-property names, scoped
-     harmlessly per table since each is set on that table element only. */
-  .sched-table .sticky-col{ position: sticky; background: var(--panel); z-index: 1; }
-  .sched-table thead th.sticky-col{ z-index: 3; }
-  .sched-table tbody tr:hover td.sticky-col{ background: var(--panel2); }
-  .sched-table .sticky-col-last{ border-right: 1px solid var(--border); box-shadow: 3px 0 6px -3px rgba(0,0,0,0.45); }
-  #overallTable .sticky-col:nth-child(1), #projTable .sticky-col:nth-child(1){ left: var(--sc0, 0px); }
-  #overallTable .sticky-col:nth-child(2), #projTable .sticky-col:nth-child(2){ left: var(--sc1, 0px); }
-  #overallTable .sticky-col:nth-child(3), #projTable .sticky-col:nth-child(3){ left: var(--sc2, 0px); }
-  #overallTable .sticky-col:nth-child(4), #projTable .sticky-col:nth-child(4){ left: var(--sc3, 0px); }
-  #overallTable .sticky-col:nth-child(5), #projTable .sticky-col:nth-child(5){ left: var(--sc4, 0px); }
-  #overallTable .sticky-col:nth-child(6){ left: var(--sc5, 0px); }
+     schema §5; made viewport-width-based 2026-09-26, same-day follow-up --
+     see the note below). Every column up to and including Work order #
+     (the identifying columns, schema §2) stays pinned via position:sticky
+     with a solid background matching this table's own row/hover
+     background, so text scrolled underneath never shows through, and a
+     right-hand border/shadow on the LAST frozen column (Work order #,
+     tagged "sticky-col-last") marks the freeze boundary -- the scroll bar
+     then only visibly scrolls the reordered schedule-date block onward.
+     The trailing row-actions column is left scrolling with the rest
+     (schema §5's own "simplest, safest default"). Left offsets are
+     per-column PIXEL WIDTHS, which vary with content/viewport, so they're
+     computed at render time (updateStickyOffsets, one CSS custom property
+     per column set on the <table> itself, regardless of viewport size)
+     rather than hard-coded -- see that function's own comment. Overall's
+     table has 6 sticky columns (Project leads it); the per-project table
+     has 5 (no Project column) -- both tables share the same --sc0.."--sc5
+     custom-property names, scoped harmlessly per table since each is set
+     on that table element only.
+
+     The STICKY POSITIONING itself (this rule's whole reason for being) is
+     now scoped to 900px and up. Andrew, verbatim, same day: "can we remove
+     the freeze on android as you cant use the schedule now" -- asked
+     directly whether this was Android/touch-specific or a general small
+     -screen problem; his answer: "it will be an issue on any smaller
+     screen (small laptop, tablet, phone)." So this is a viewport-width
+     breakpoint, never an OS/UA check -- below it, every column (including
+     these) just scrolls together in one plain, fully-scrollable table
+     (updateStickyOffsets keeps running regardless -- harmless, since the
+     custom properties it sets do nothing once position isn't sticky). */
+  @media (min-width: 900px){
+    .sched-table .sticky-col{ position: sticky; background: var(--panel); z-index: 1; }
+    .sched-table thead th.sticky-col{ z-index: 3; }
+    .sched-table tbody tr:hover td.sticky-col{ background: var(--panel2); }
+    .sched-table .sticky-col-last{ border-right: 1px solid var(--border); box-shadow: 3px 0 6px -3px rgba(0,0,0,0.45); }
+    #overallTable .sticky-col:nth-child(1), #projTable .sticky-col:nth-child(1){ left: var(--sc0, 0px); }
+    #overallTable .sticky-col:nth-child(2), #projTable .sticky-col:nth-child(2){ left: var(--sc1, 0px); }
+    #overallTable .sticky-col:nth-child(3), #projTable .sticky-col:nth-child(3){ left: var(--sc2, 0px); }
+    #overallTable .sticky-col:nth-child(4), #projTable .sticky-col:nth-child(4){ left: var(--sc3, 0px); }
+    #overallTable .sticky-col:nth-child(5), #projTable .sticky-col:nth-child(5){ left: var(--sc4, 0px); }
+    #overallTable .sticky-col:nth-child(6){ left: var(--sc5, 0px); }
+  }
 
   /* ---- Status-history hover popup (2026-09-23, ported from UTZLINE
        Projects' Joinery Register -- see index.html there for the original.
@@ -3586,7 +3612,7 @@
     openJoineryItemPage(t.row, "planCanvas");
   });
 
-  function openPlanCanvasForLevel(projectHandle, projectName, levelName, returnScreen){
+  function openPlanCanvasForLevel(projectHandle, projectName, levelName, returnScreen, centerOnMarker){
     planActiveProjectHandle = projectHandle;
     planActiveProjectName = projectName;
     planActiveLevelName = levelName;
@@ -3652,6 +3678,37 @@
       planRenderMarkers();
       requestAnimationFrame(function(){
         planFitToView();
+        // (2026-09-26) "View on plan" zoom-to-item -- ported verbatim from
+        // UTZLINE Projects' own openPlanCanvasForLevel(centerOnMarker),
+        // which Andrew confirmed is "the perfect zoom level" (NEXT_RUN_NOTES
+        // item 7). Same two accepted shapes as Projects: {room, joineryId}
+        // looks up that item's own roomlink marker; {x, y} centres on a raw
+        // world point directly. Only the two call sites tied to a specific
+        // joinery item pass this; the general level-picker "Open plan"
+        // button (no single item in view) omits it and keeps today's plain
+        // fit-to-view.
+        if (centerOnMarker){
+          var targetX = null, targetY = null;
+          if (typeof centerOnMarker.x === "number" && typeof centerOnMarker.y === "number"){
+            targetX = centerOnMarker.x;
+            targetY = centerOnMarker.y;
+          } else {
+            var marker = (planSaved.objects || []).filter(function(o){
+              return o.type === "roomlink" && o.roomName === centerOnMarker.room && o.joineryCode === centerOnMarker.joineryId;
+            })[0];
+            if (marker){ targetX = marker.x; targetY = marker.y; }
+          }
+          if (targetX !== null){
+            var w = planCanvasStageWrap.clientWidth, h = planCanvasStageWrap.clientHeight;
+            // Zoom in at least as close as a 1:1 pixel view so the target is
+            // easy to pick out, but never zoom back OUT past whatever
+            // fit-to-view already chose.
+            planView.scale = Math.max(planView.scale, 1);
+            planView.tx = w / 2 - targetX * planView.scale;
+            planView.ty = h / 2 - targetY * planView.scale;
+            planApplyTransform();
+          }
+        }
       });
       if (!level){
         showToast("No saved plan found for this level yet.");
@@ -4393,7 +4450,7 @@
       });
     }
     viewBtn.addEventListener("click", function(){
-      withHandle(function(h){ return openPlanCanvasForLevel(h, row.project, row.level, returnScreen); });
+      withHandle(function(h){ return openPlanCanvasForLevel(h, row.project, row.level, returnScreen, { room: row.room, joineryId: row.joineryId }); });
     });
     editBtn.addEventListener("click", function(){
       // The saved/cleared record is applied to the table rows in place by
@@ -4546,7 +4603,7 @@
     if (!activeJoineryItemRow) return;
     if (joineryItemReturnToPlan){ closeJoineryItemPage(); return; } // the plan is already open underneath, just paused
     var row = activeJoineryItemRow;
-    openPlanCanvasForLevel(row.projectHandle, row.project, row.level, joineryItemReturnScreen);
+    openPlanCanvasForLevel(row.projectHandle, row.project, row.level, joineryItemReturnScreen, { room: row.room, joineryId: row.joineryId });
   });
   jiJobNoteBtn.addEventListener("click", function(){
     if (!activeJoineryItemRow) return;

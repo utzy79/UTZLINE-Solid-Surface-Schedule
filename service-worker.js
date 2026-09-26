@@ -194,9 +194,19 @@
 // new event-sourced "Solid Surface Completion" file, column reorder + two
 // new columns, "Open item" button + scoped Joinery Item page, frozen
 // identifying columns, status icon swap, new "Delivery due soon" delay
-// pill, and the plan-canvas tap/long-press behaviour change -- see README v8.)
+// pill, and the plan-canvas tap/long-press behaviour change -- see README v8.
+//
+// v9, 2026-09-26, same day: Andrew, "now update the schedules," -- "View on
+// plan" now zooms/centers on the specific item's own marker (ported from
+// UTZLINE Projects' openPlanCanvasForLevel(centerOnMarker)) instead of just
+// fitting the whole level; the existing v8 sticky-column treatment now has
+// a real, working horizontal scrollbar (a .screen{min-width:0} fix -- the
+// table was overflowing the whole page instead of its own .table-scroll
+// wrapper) and is viewport-width-based, not OS/UA-based (sticky only at/
+// above 900px; a plain, fully-scrollable table below it). No cache-strategy
+// change; CACHE_NAME bumped. See the README's v9 entry.)
 var ICON_VERSION = "v1";
-var CACHE_NAME = "utzline-solid-surface-schedule-cache-v8";
+var CACHE_NAME = "utzline-solid-surface-schedule-cache-v9";
 
 var PRECACHE_URLS = [
   "./",

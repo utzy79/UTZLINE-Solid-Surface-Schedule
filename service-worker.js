@@ -72,13 +72,18 @@
 //     level's floor plan image and its roomlink markers, for the
 //     read-only plan viewer
 //
-// WHAT IT WRITES: exactly ONE file of its own -- "solid-surface-schedule.json"
-// (a sibling of, and never the same file as, the main Scheduler's own
-// joinery-schedule.json), one per project, one record per scheduled Solid
-// Surface item: { level, room, joineryId, requiredDeliveryDate,
-// manufactureLeadTimeDays (this app's own default 30), manufactureStartDate
-// (computed, same business-day math as Scheduler), updatedAt, setBy } --
-// plus the same shared <ProjectsRoot>/utzline-users.csv name+PIN identity
+// WHAT IT WRITES: exactly ONE branch of its own -- "solid-surface-
+// schedule.json" (a sibling of, and never the same file as, the main
+// Scheduler's own joinery-schedule.json). As of v7 (2026-09-26) this is
+// event-sourced: one immutable event file per Save/Clear under
+// "Project Saves/Solid Surface Schedule/<Level> - <Room> - <Code>/",
+// folded to the single latest event by timestamp -- { kind: "set"|"clear",
+// level, room, joineryId, requiredDeliveryDate, manufactureLeadTimeDays
+// (this app's own default 30), manufactureStartDate (computed, same
+// business-day math as Scheduler), by, at }. The old whole-file array is
+// migrated in automatically, once, losslessly, the first time this app
+// opens a project after v7, and left on disk afterward, untouched -- plus
+// the same shared <ProjectsRoot>/utzline-users.csv name+PIN identity
 // registry every sibling UTZLINE app reads and writes (APP_CODES here
 // gained one new entry, ["SolidSurfaceSchedule", "Solid Surface Schedule"],
 // following the same pattern Machine Schedule already used for its own
@@ -151,8 +156,43 @@
 // Scheduler and UTZLINE Machine Schedule are getting the identical feature
 // in parallel, each in their own codebase -- this app's own copy touches
 // nothing outside this file and index.html.)
+//
+// (v3/v4/v5, 2026-09-24: joinery-status.json / machining-flags.json /
+// joinery-schedule.json v2 -- each read path now folds one-immutable-event-
+// file-per-change folders under "Project Saves/" instead of a shared
+// mutable array file, with a one-time lossless migration; see README.)
+//
+// (v6, 2026-09-25/26: family-wide scheduling sweep -- Andrew: "ok, now a
+// full sweep of all the scheduling software", then mid-sweep "add in tick
+// boxes for filtering out installed and delivered items". One memoised
+// IndexedDB connection per database; the device/phone Back button walks
+// back through the app and closes any open dialog first; "unreadable is
+// not empty" -- every read that feeds a write is strict, above all this
+// app's own whole-file solid-surface-schedule.json read-modify-write on
+// Save/Clear, the shared utzline-users.csv, and the three legacy
+// migrations (legacy file read BEFORE any events folder is created);
+// speed -- directory-handle cache, folded-event cache, level-name stat
+// cache, parallel project reads, instant paint from last-known snapshots,
+// in-place row patching after Save/Clear; Android touch/selection
+// robustness; "Hide delivered"/"Hide installed" tick boxes on both tables;
+// ordinary bugs fixed (two `hidden` toggles that never hid anything, stale
+// rows after navigation, unhandled rejections, a floating popover, a lost
+// project filter on Refresh, text that lied). See README v6.)
+//
+// (v7, 2026-09-26: this app's OWN solid-surface-schedule.json is now
+// event-sourced -- one immutable event file per Save/Clear under
+// "Project Saves/Solid Surface Schedule/<Level> - <Room> - <Code>/",
+// folded to the single latest event by timestamp, with a one-time
+// automatic lossless migration from the old whole-file array -- so two
+// site managers scheduling different Solid Surface items in the same
+// project at the same moment can no longer clobber each other. This app
+// also got its own IndexedDB database ("utzline-solid-surface-schedule-db",
+// split off from the shared "utzline-scheduler-db"), with a best-effort
+// one-time carry-over of the persisted Projects-root folder handle from
+// the old shared database so installed copies don't have to reconnect.
+// See README v7.)
 var ICON_VERSION = "v1";
-var CACHE_NAME = "utzline-solid-surface-schedule-cache-v5";
+var CACHE_NAME = "utzline-solid-surface-schedule-cache-v7";
 
 var PRECACHE_URLS = [
   "./",

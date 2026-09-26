@@ -48,7 +48,32 @@
   never touches UTZLINE Machine Schedule's own machining-flags.json except
   an optional, entirely read-only display of that item's own Solid Surface
   cut state (see readMachiningFlags below) -- neither file is ever written
-  by this app.
+  by this app (the one-time legacy->event-folder migrations of those two
+  files, which this app performs only when it happens to be the first app
+  to open a project, are the family-wide contract, not a write of content).
+
+  v6 (2026-09-25/26, family-wide scheduling sweep -- Andrew: "ok, now a full
+  sweep of all the scheduling software", then mid-sweep "add in tick boxes
+  for filtering out installed and delivered items"): the same four family
+  fixes as Scheduler v19 / Machine Schedule v9, adapted to this fork --
+  (1) one memoised IndexedDB connection per database (idbConnP /
+  identityConnP); (2) the device/phone BACK BUTTON walks back through the
+  app (navRecord / closeAnyOpenOverlay / appBackFromDeviceButton, next to
+  showScreen); (3) "unreadable is not empty" -- every read that feeds a
+  write or a start-fresh decision is strict (readTextFileStrict /
+  readJsonArrayFileStrict), above all this app's own whole-file
+  solid-surface-schedule.json read-modify-write on Save/Clear, the shared
+  utzline-users.csv, and the three legacy migrations, which now read the
+  legacy file BEFORE creating an events folder; (4) speed -- a per-session
+  directory-handle cache (getCachedDir), memoised migration checks, a
+  folded-event cache, the level-name stat cache, projects read in
+  parallel, instant paint from last-known snapshots (snapGet/snapSet),
+  in-place row patching after a Save/Clear, items read once per plan
+  open, the plan transform coalesced per frame, debounced search; plus
+  Android touch/selection robustness, the "Hide delivered"/"Hide
+  installed" tick boxes on both tables, and the ordinary bugs listed in
+  the README's v6 entry. No file format or filename anyone else reads or
+  writes changes.
 
   Like UTZLINE Scheduler itself (and Install ITP / Manufacture ITP /
   Projects before it), this is NOT built from source.html -- it is its
@@ -257,6 +282,16 @@
     --radius: 12px;
   }
   *{ box-sizing: border-box; }
+  /* (2026-09-25, family-wide sweep -- v6) The browser's own default
+     `[hidden]{display:none}` is a UA rule, so ANY author display rule on the
+     same element outranks it. Two toggles in this app never actually hid
+     anything: `schedClearBtn.hidden = true` on a `.btn{display:inline-flex}`
+     and `levelPlanRow.hidden = true` on a `.card.row{display:flex}` -- the
+     "Clear schedule" button showed for items with no record yet, and the
+     "Open a level's plan" row (with an empty select) showed for a project
+     with no plan. Same bug Scheduler v19 / Machine Schedule v9 found in
+     their own copies of this markup. One rule fixes every toggle. */
+  [hidden]{ display: none !important; }
   html, body{ height: 100%; }
   body{
     margin: 0;
@@ -321,6 +356,12 @@
     cursor: pointer;
     text-decoration: none;
   }
+  /* (2026-09-25, sweep -- v6) Android: a plain tap on a button/row/header
+     must act as a plain tap -- no 300ms double-tap-zoom wait, no text
+     selection from a slightly-long press. `manipulation` keeps pan/pinch
+     on the page but drops double-tap zoom on these controls. */
+  .btn, .list-item, .sched-table th, select, input{ touch-action: manipulation; }
+  .btn, .list-item, .sched-table th{ -webkit-user-select: none; user-select: none; }
   .btn:hover{ filter: brightness(1.1); }
   .btn.secondary{
     background: transparent;
@@ -441,9 +482,22 @@
     color: var(--text); padding: 8px 10px; font-size: 13px;
   }
   .filters-bar input[type=text]{ min-width: 180px; flex: 1 1 180px; }
+  /* "Hide delivered" / "Hide installed" tick boxes (2026-09-26, Andrew:
+     "add in tick boxes for filtering out installed and delivered items") --
+     plain labelled checkboxes in the same filters bar, big enough to tap. */
+  .filter-check{ display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); cursor: pointer; touch-action: manipulation; -webkit-user-select: none; user-select: none; white-space: nowrap; }
+  .filter-check input{ width: 17px; height: 17px; margin: 0; accent-color: var(--accent); }
+  .table-count{ font-size: 12px; color: var(--muted2); margin: 0 0 10px; }
 
   /* schedule tables */
-  .table-scroll{ overflow-x: auto; }
+  /* (2026-09-25, sweep -- v6) A wide table on a tablet pans with a finger in
+     both axes; tapping a row's button must not fight the pan -- `pan-x pan-y`
+     tells the browser the scroll is its job and the tap is ours. */
+  .table-scroll{ overflow-x: auto; touch-action: pan-x pan-y; -webkit-overflow-scrolling: touch; }
+  /* Instant-paint refresh note (2026-09-25, sweep -- v6): shown while a table
+     painted from its last-known device-local snapshot is being refreshed
+     from the folder in the background. */
+  .refresh-note{ font-size: 12px; color: var(--muted2); margin: 0 0 10px; }
   .sched-table{ width: 100%; border-collapse: collapse; font-size: 13px; min-width: 900px; }
   .sched-table th{
     text-align: left; padding: 8px 10px; color: var(--muted); font-weight: 600;
@@ -508,6 +562,11 @@
     width: auto; max-width: none;
     display: flex; flex-direction: column;
     background: #070d10;
+    /* (2026-09-25, sweep -- v6) Android: a long press on the plan (this
+       app's own long-press-to-schedule gesture) must never select the
+       title text or pop the image "save/copy" sheet -- paired with the
+       document-level contextmenu swallow while this screen is open. */
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
   }
   .plan-canvas-screen[hidden]{ display: none; }
   .plan-canvas-topbar{
@@ -577,7 +636,12 @@
   <!-- ---- Setup: no Projects root chosen yet ---- -->
   <section id="screenSetup" class="screen narrow">
     <h1>Choose your Projects folder</h1>
-    <p class="sub">Pick the same top-level Projects folder used by UTZLINE Site Measure, Viewer, Install ITP, Manufacture ITP, Delivery ITP, Projects, Scheduler and Machine Schedule. Solid Surface Schedule only reads their data (plus, once only per item, the main Scheduler's own delivery date as a starting-point prefill) -- the only thing it ever writes is its own new solid-surface-schedule.json file, one per project, scoped to items with "Has Solid Surface" ticked. Nothing about those apps changes.</p>
+    <!-- (2026-09-25, sweep -- v6) Text that lied, corrected: besides its own
+         solid-surface-schedule.json this app also writes the shared name+PIN
+         registry (utzline-users.csv, since v1's identity selector) and can
+         perform the family's one-time legacy-file migrations into
+         "Project Saves" event folders (since v3/v4/v5). -->
+    <p class="sub">Pick the same top-level Projects folder used by UTZLINE Site Measure, Viewer, Install ITP, Manufacture ITP, Delivery ITP, Projects, Scheduler and Machine Schedule. Solid Surface Schedule reads their data (plus, once only per item, the main Scheduler's own delivery date as a starting-point prefill) and writes only its own solid-surface-schedule.json file, one per project, scoped to items with "Has Solid Surface" ticked -- plus the shared name+PIN registry every UTZLINE app uses, and the same one-time, lossless migration of older shared files that every other app in the family also performs. Nothing about those apps changes.</p>
     <button class="btn" id="chooseRootBtn">Choose Projects folder</button>
     <p class="error-note" id="setupError" hidden></p>
   </section>
@@ -655,11 +719,20 @@
         <option value="none">No schedule set</option>
       </select>
       <input type="text" id="overallSearchInput" placeholder="Search ID, description, or work order #">
+      <!-- (2026-09-26) Andrew: "add in tick boxes for filtering out installed
+           and delivered items" -- see hideStatusCheckbox below. -->
+      <label class="filter-check"><input type="checkbox" id="overallHideDelivered"> Hide delivered</label>
+      <label class="filter-check"><input type="checkbox" id="overallHideInstalled"> Hide installed</label>
       <button class="btn secondary sm" id="refreshOverallBtn">Refresh</button>
     </div>
+    <p class="table-count" id="overallCountNote" hidden></p>
     <div class="card" id="overallLoadingCard">
       <p class="sub" style="margin:0;">Reading every project...</p>
     </div>
+    <!-- (2026-09-25, sweep -- v6) Shown instead of the loading card when the
+         table was painted instantly from its last-known snapshot and is being
+         refreshed from the folder behind it. -->
+    <p class="refresh-note" id="overallRefreshNote" hidden>Showing last-known schedule — refreshing from the folder…</p>
     <div class="card table-scroll" id="overallTableCard" hidden>
       <table class="sched-table" id="overallTable">
         <thead>
@@ -722,7 +795,16 @@
         <option value="none">No schedule set</option>
       </select>
       <input type="text" id="projSearchInput" placeholder="Search ID, description, or work order #">
+      <label class="filter-check"><input type="checkbox" id="projHideDelivered"> Hide delivered</label>
+      <label class="filter-check"><input type="checkbox" id="projHideInstalled"> Hide installed</label>
+      <!-- (2026-09-25, sweep -- v6) The project schedule had no Refresh
+           button (the Overall Schedule did); now that this table paints from
+           its last-known snapshot first, "re-read the folder now" is a real
+           need here too. -->
+      <button class="btn secondary sm" id="refreshProjectBtn">Refresh</button>
     </div>
+    <p class="table-count" id="projCountNote" hidden></p>
+    <p class="refresh-note" id="projRefreshNote" hidden>Showing last-known schedule — refreshing from the folder…</p>
     <div class="card table-scroll">
       <table class="sched-table" id="projTable">
         <thead>
@@ -908,17 +990,65 @@
      Own database, own name -- deliberately separate from every other app's
      own IndexedDB ("redline-db"/"session", "utzline-projects-db", etc.),
      same one-database-per-app pattern already established across the
-     family. Only ever holds this app's own Projects-root folder handle. */
-  var DB_NAME = "utzline-scheduler-db", STORE = "session";
+     family. Only ever holds this app's own Projects-root folder handle,
+     its own screen snapshots, and its own folded-event/level-name caches.
+
+     ---- own database (v7, 2026-09-26) ----
+     DB_NAME used to be "utzline-scheduler-db", inherited verbatim from the
+     Scheduler fork (v1) and left that way through v6 -- so on the shared
+     GitHub Pages origin this app and the MAIN Scheduler shared one
+     IndexedDB database and one "session" store (the comment that used to
+     sit here claimed the opposite -- that this app already had its own
+     database -- which was simply wrong; fixed along with the database
+     itself). Every key this app added from v6 onward was namespaced with a
+     "sss-" prefix precisely BECAUSE of that sharing (sss-snap,
+     sss-eventFolds, sss-flatLevelNames) -- see readFoldedEventBranch's own
+     comment. Now that solid-surface-schedule.json is event-sourced (v7,
+     see above) with its own per-device identity doing the writes, Andrew
+     asked for this app to have its own database too, matching every other
+     app in the family. DB_NAME is now "utzline-solid-surface-schedule-db".
+     Because the persisted Projects-root folder handle used to live in the
+     SHARED database, a straight rename would make every already-installed
+     copy of this app forget its chosen folder and ask to reconnect once --
+     see readLegacyRootHandleForCarryOver below for the one-time,
+     best-effort carry-over that avoids that where it can (never touching
+     the old database, which the main Scheduler still uses). The "sss-"
+     prefix on this app's own keys is no longer load-bearing now that
+     nothing else uses this database -- left in place anyway (harmless,
+     less churn than renaming every key). */
+  var DB_NAME = "utzline-solid-surface-schedule-db", STORE = "session";
+  // The old SHARED database this app used through v6 -- see the carry-over
+  // comment above and readLegacyRootHandleForCarryOver below. NEVER opened
+  // for write, and never deleted or modified: the main Scheduler still
+  // uses it as its own DB_NAME.
+  var OLD_SHARED_DB_NAME = "utzline-scheduler-db";
+  /* One connection, opened once and reused (2026-09-25, family-wide sweep --
+     v6; the same fix Install ITP v35 shipped after Andrew's "still having
+     slow down after a little use, (possibly caching issues)"). This used to
+     open a NEW IndexedDB connection on every idbGet/idbSet and never close
+     it -- harmless when the app touched IndexedDB once at boot, but this
+     round also puts every screen's last-known snapshot, the folded-event
+     cache and the level-name stat cache in here (see the snapshot helpers
+     below), so it is now read on every screen open and written on every
+     refresh. Now: open once, keep it; reopen only if the browser closes it
+     (versionchange / close). Same fix for the identity store below. */
+  var idbConnP = null;
   function idbOpen(){
-    return new Promise(function(res, rej){
+    if (idbConnP) return idbConnP;
+    idbConnP = new Promise(function(res, rej){
       try{
         var r = indexedDB.open(DB_NAME, 1);
         r.onupgradeneeded = function(){ r.result.createObjectStore(STORE); };
-        r.onsuccess = function(){ res(r.result); };
-        r.onerror = function(){ rej(r.error); };
-      }catch(e){ rej(e); }
+        r.onsuccess = function(){
+          var db = r.result;
+          db.onversionchange = function(){ db.close(); idbConnP = null; };
+          db.onclose = function(){ idbConnP = null; };
+          res(db);
+        };
+        r.onerror = function(){ idbConnP = null; rej(r.error); };
+      }catch(e){ idbConnP = null; rej(e); }
     });
+    return idbConnP;
   }
   function idbSet(key, val){
     return idbOpen().then(function(db){
@@ -941,6 +1071,83 @@
     });
   }
 
+  /* ---- One-time Projects-root handle carry-over from the old shared
+     database (v7, 2026-09-26) ----
+     Splitting DB_NAME onto its own database (see the comment above it)
+     means this app's persisted Projects-root folder handle -- previously
+     stored under OLD_SHARED_DB_NAME's own "session" store, the same key
+     ("projectsRootHandle") -- is no longer where boot() looks for it. Left
+     alone, every already-installed copy of this app would boot to "choose
+     your Projects folder" once, purely because of this internal rename --
+     a real inconvenience for no benefit, since the folder itself hasn't
+     moved. So: a short-lived, read-only, best-effort connection to the OLD
+     database, ONLY to fetch that one key -- never a write, never a delete,
+     and the old database is left exactly as the main Scheduler (which
+     still uses it as its own DB_NAME) expects it. indexedDB.databases()
+     (supported in every browser this app already requires, since it also
+     requires window.showDirectoryPicker) is checked FIRST specifically so
+     opening this function never brings the old database into existence on
+     a device that genuinely never had it -- indexedDB.open() on a name
+     that doesn't exist yet would otherwise create it. Any failure at any
+     step (no support, the database genuinely absent, a blocked/blocked-by
+     connection, a missing key) just resolves null, and boot() falls back
+     to its normal "pick your Projects root" flow -- this is a convenience,
+     never a data-safety requirement. */
+  function readLegacyRootHandleForCarryOver(){
+    function openAndReadOldDb(){
+      return new Promise(function(resolve){
+        var req;
+        try{ req = indexedDB.open(OLD_SHARED_DB_NAME); }catch(e){ resolve(null); return; }
+        req.onupgradeneeded = function(){
+          // The existence check below should have prevented this -- but if
+          // it couldn't run (no indexedDB.databases() support) and the old
+          // database genuinely isn't there, this open just created it.
+          // Give it its expected shape so nothing downstream breaks, then
+          // resolve null: there is nothing to carry over.
+          try{ req.result.createObjectStore(STORE); }catch(e){}
+        };
+        req.onsuccess = function(){
+          var db = req.result;
+          try{
+            var tx = db.transaction(STORE, "readonly");
+            var rq = tx.objectStore(STORE).get("projectsRootHandle");
+            rq.onsuccess = function(){ db.close(); resolve(rq.result || null); };
+            rq.onerror = function(){ db.close(); resolve(null); };
+          }catch(e){ try{ db.close(); }catch(e2){} resolve(null); }
+        };
+        req.onerror = function(){ resolve(null); };
+      });
+    }
+    if (typeof indexedDB.databases === "function"){
+      return indexedDB.databases().then(function(list){
+        var exists = (list || []).some(function(d){ return d && d.name === OLD_SHARED_DB_NAME; });
+        return exists ? openAndReadOldDb() : null;
+      }).catch(function(){ return openAndReadOldDb(); });
+    }
+    return openAndReadOldDb();
+  }
+
+  /* ---- Last-known snapshots (2026-09-25, sweep -- v6; "icon caching like we
+     just did"). The design rule proven on Andrew's tablet during the ITP
+     rounds: on Android + Dropbox every File System Access call costs
+     hundreds of ms and a named lookup scans its folder, so a screen must
+     never make the person wait on the folder to show what it showed last
+     time. Each screen's last successful result (Home's project list, the
+     Overall Solid Surface Schedule's rows, each project's rows + plan
+     levels) is kept in this app's own IndexedDB, keyed under the current
+     Projects-root name so a different root never paints another root's
+     data (and under an "sss-" prefix so the main Scheduler, which shares
+     this database, never paints ITS rows here); on open the screen paints
+     that snapshot instantly (with a "refreshing…" note), reads the folder
+     in the background, then repaints and re-saves. Best-effort in both
+     directions -- a failed get paints nothing early, a failed set is
+     ignored -- the folder read is always the truth. Rows are stored WITHOUT
+     their project directory handle (see rowToSnapshot) and get it back
+     lazily via ensureRowProjectHandle the moment a row action needs it. */
+  function snapKey(kind, name){ return "sss-snap\u0000" + (projectsRootName || "") + "\u0000" + kind + (name != null ? "\u0000" + name : ""); }
+  function snapGet(kind, name){ return idbGet(snapKey(kind, name)).catch(function(){ return null; }); }
+  function snapSet(kind, name, value){ return idbSet(snapKey(kind, name), value).catch(function(){}); }
+
   /* ============================== shared per-device identity (UTZLINE Data Standard v1, §6) ==============================
      Andrew, verbatim (2026-09-23): "implement the username as per the
      delivery itp throughout the entire system, but instead of it opening a
@@ -952,17 +1159,25 @@
      this block uses, so a name set in ANY of them shows up in ALL of them:
      IndexedDB is scoped per-ORIGIN, not per-page, and every UTZLINE app
      lives on the one GitHub Pages origin. This app never needs to know
-     utzline-scheduler-db's own schema (its own Projects-root handle store
-     above) or vice versa -- just this one small shared pair. */
+     DB_NAME's own schema (its own Projects-root handle store above) or
+     vice versa -- just this one small shared pair. */
   var IDENTITY_DB_NAME = "utzline-identity", IDENTITY_STORE = "kv", IDENTITY_KEY = "deviceUserName";
   var deviceUserName = "";
-  function identityDbOpen(){
-    return new Promise(function(resolve, reject){
+  var identityConnP = null;
+  function identityDbOpen(){ // one connection, reused -- see idbOpen above
+    if (identityConnP) return identityConnP;
+    identityConnP = new Promise(function(resolve, reject){
       var req = indexedDB.open(IDENTITY_DB_NAME, 1);
       req.onupgradeneeded = function(){ req.result.createObjectStore(IDENTITY_STORE); };
-      req.onsuccess = function(){ resolve(req.result); };
-      req.onerror = function(){ reject(req.error); };
+      req.onsuccess = function(){
+        var db = req.result;
+        db.onversionchange = function(){ db.close(); identityConnP = null; };
+        db.onclose = function(){ identityConnP = null; };
+        resolve(db);
+      };
+      req.onerror = function(){ identityConnP = null; reject(req.error); };
     });
+    return identityConnP;
   }
   function getDeviceUserName(){
     return identityDbOpen().then(function(db){
@@ -1054,6 +1269,118 @@
   }
   function listExistingProjects(rootHandle){ return listSubdirNames(rootHandle); }
 
+  /* ============================== directory-handle cache (2026-09-25, sweep -- v6) ==============================
+     Ported in shape from Install ITP's getCachedDir/projectDir (via
+     Scheduler v19, this app's parent). On Android every getDirectoryHandle()
+     is a real cross-process Storage Access Framework call (hundreds of ms on
+     Andrew's tablet, and a named lookup scans its folder), and this app
+     re-walked the same fixed paths from a project root on every read -- one
+     Overall Schedule open did "Project Saves" -> "Joinery Status" (twice:
+     once to check it exists, once to list it), the same again for
+     "Machining Flags", per project, and then AGAIN per item for its own
+     event folder. A directory handle stays valid for as long as the folder
+     exists, so every such walk is memoised here per project name (unique
+     under one Projects root). Cleared when a different root is chosen; any
+     one entry is dropped the moment an operation through it fails (folder
+     renamed/removed underneath us) so the next call re-resolves from
+     scratch. Only SUCCESSFUL resolutions are cached -- a create:false miss
+     is never remembered, because that folder may legitimately appear a
+     moment later (another app creating it, or Dropbox syncing it in). */
+  var dirHandleCache = {};
+  var migratedThisSession = {};
+  function invalidateDirHandleCache(){ dirHandleCache = {}; migratedThisSession = {}; }
+  function dirCacheKey(baseKey, segments){ return baseKey + "\u0000" + segments.join("\u0000"); }
+  function getCachedDir(baseHandle, baseKey, segments, create){
+    var key = dirCacheKey(baseKey, segments);
+    if (dirHandleCache[key]) return Promise.resolve(dirHandleCache[key]);
+    var parentP = segments.length > 1
+      ? getCachedDir(baseHandle, baseKey, segments.slice(0, -1), create)
+      : Promise.resolve(baseHandle);
+    return parentP.then(function(parentH){
+      return parentH.getDirectoryHandle(segments[segments.length - 1], { create: !!create });
+    }).then(function(h){
+      dirHandleCache[key] = h;
+      return h;
+    });
+  }
+  function projectDir(projectHandle, segments, create){
+    return getCachedDir(projectHandle, "project\u0000" + (projectHandle && projectHandle.name || ""), segments, create);
+  }
+  function forgetProjectDir(projectHandle, segments){
+    var prefix = dirCacheKey("project\u0000" + (projectHandle && projectHandle.name || ""), segments);
+    Object.keys(dirHandleCache).forEach(function(k){
+      if (k === prefix || k.indexOf(prefix + "\u0000") === 0) delete dirHandleCache[k];
+    });
+  }
+  // The project directory handle for a name under the chosen root --
+  // memoised the same way (one named lookup per project per session, not
+  // one per table row action).
+  function getProjectHandleByName(name){
+    return getCachedDir(projectsRootHandle, "root", [name], false);
+  }
+
+  /* ============================== "unreadable is not empty" (2026-09-25, sweep -- v6) ==============================
+     Site Measure v46's rule (see its readFlatLevelFileByName), applied to
+     every read in this app that feeds a WRITE or a "nothing exists, start
+     fresh" decision. On a Dropbox-synced Android folder a file mid-sync
+     reads as truncated or unparseable for a moment; before this round every
+     such failure collapsed to []/null, and these paths then acted on that
+     empty result as if it were the truth:
+       - readJoinerySchedule -> [] -> Save/Clear (a whole-file read-modify-
+         WRITE of THIS app's own solid-surface-schedule.json, the most
+         important case in this app) rewrote the file with ONLY the record
+         just saved -- every other Solid Surface schedule in the project
+         gone;
+       - readUsersCsv -> [] -> "Add a new name" wrote a utzline-users.csv
+         holding ONLY the new name, wiping every other person's row;
+       - the three legacy migrations (joinery-status.json, the MAIN
+         Scheduler's joinery-schedule.json, Machine Schedule's
+         machining-flags.json) each created the events folder FIRST and then
+         read the legacy file -> [] -> an empty events folder, after which no
+         app in the family ever reads the legacy file again (every status /
+         schedule / cut history "gone" from every app's point of view).
+     These helpers tell the two cases apart: NotFoundError (genuinely absent
+     -> fresh is fine) versus anything else (-> one retry after a short
+     pause, since the field failures are transient, then reject with
+     {code:"read_failed"} so the caller surfaces an error and does NOT
+     write). Pure-display reads that keep failing soft say so in their own
+     comment at the call site. */
+  function isNotFoundErr(err){ return !!(err && (err.name === "NotFoundError" || err.name === "TypeMismatchError")); }
+  function readFailedErr(what, err){ var e = new Error("Couldn't read " + what + (err && err.message ? " (" + err.message + ")" : "")); e.code = "read_failed"; e.cause = err; return e; }
+  function isReadFailed(err){ return !!(err && err.code === "read_failed"); }
+  function pause(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+  var READ_RETRY_MS = 600;
+  // Resolves { found:true, value } / { found:false, value:null }; rejects
+  // read_failed for anything that isn't a clean NotFound. `parse(text)`
+  // turns the file's text into the resolved value and may throw (a
+  // truncated file that won't JSON.parse is the transient case this exists
+  // for), so it sits INSIDE the retried attempt.
+  function readTextFileStrict(dirHandle, fileName, what, parse){
+    function attempt(){
+      return dirHandle.getFileHandle(fileName, { create: false }).then(function(fh){
+        return fh.getFile().then(function(file){ return file.text(); }).then(function(text){
+          var value;
+          try{ value = parse ? parse(text) : text; }catch(e){ return Promise.reject(readFailedErr(what, e)); }
+          return { found: true, value: value };
+        }, function(err){ return Promise.reject(isReadFailed(err) ? err : readFailedErr(what, err)); });
+      }, function(err){
+        if (isNotFoundErr(err)) return { found: false, value: null };
+        return Promise.reject(readFailedErr(what, err));
+      });
+    }
+    return attempt().catch(function(){ return pause(READ_RETRY_MS).then(attempt); });
+  }
+  // Same, for a JSON array file: resolves the array, or [] ONLY when the
+  // file genuinely isn't there; a file that exists but won't parse (or
+  // parses to something that isn't an array) rejects read_failed.
+  function readJsonArrayFileStrict(dirHandle, fileName, what){
+    return readTextFileStrict(dirHandle, fileName, what, function(text){
+      var parsed = JSON.parse(text);
+      if (!Array.isArray(parsed)) throw new Error("not a JSON array");
+      return parsed;
+    }).then(function(res){ return res.found ? res.value : []; });
+  }
+
   /* ============================== shared name+PIN registry (CSV) ==============================
      Copied verbatim from UTZLINE Delivery ITP's own reference implementation
      of Andrew's identity-selector instruction (see the identity-row comment
@@ -1125,14 +1452,18 @@
   }
   // Always re-reads the live file -- never trusts a stale in-memory copy,
   // since another device or another app could have changed it since this
-  // page loaded. Resolves to [] both when the file doesn't exist yet and
-  // when it's empty/unparseable, so callers never need a separate
-  // "not found" branch.
+  // page loaded. Resolves to [] ONLY when the file genuinely doesn't exist
+  // yet. (2026-09-25, sweep -- v6, "unreadable is not empty") It used to
+  // resolve [] for ANY failure, and beginAddNewIdentityFlow then pushed the
+  // new row onto that empty list and wrote it back whole -- so a
+  // utzline-users.csv that was mid-Dropbox-sync for a moment would have
+  // been rewritten with only the new name in it, every other person's row
+  // gone. Now a file that exists but can't be read rejects (read_failed,
+  // after one retry); the add-name flow refuses to write and says so, and
+  // the PIN check reports a read problem rather than "Incorrect PIN".
   function readUsersCsv(){
     if (!projectsRootHandle) return Promise.resolve([]);
-    return projectsRootHandle.getFileHandle(USERS_CSV_NAME, { create: false }).then(function(fh){
-      return fh.getFile();
-    }).then(function(file){ return file.text(); }).then(function(text){
+    return readTextFileStrict(projectsRootHandle, USERS_CSV_NAME, USERS_CSV_NAME, function(text){
       var rows = csvParseText(text);
       if (!rows.length) return [];
       var start = (rows[0] && String(rows[0][0] || "").trim().toLowerCase() === "name") ? 1 : 0;
@@ -1143,7 +1474,7 @@
         out.push({ name: r[0] || "", pin: r[1] || "", showInApps: r[2] || "" });
       }
       return out;
-    }, function(){ return []; }); // no file yet -- not an error
+    }).then(function(res){ return res.found ? res.value : []; });
   }
   function writeUsersCsv(rows){
     var lines = [USERS_CSV_HEADER];
@@ -1181,28 +1512,29 @@
   }
   function projectSavesDirName(){ return "Project Saves"; }
   function floorPlansDirName(){ return "Floor Plans"; }
+  // Read-only (create:false), memoised per project -- see getCachedDir.
   function getFloorPlansDir(projectHandle){
-    return projectHandle.getDirectoryHandle(projectSavesDirName(), { create: false }).then(function(psH){
-      return psH.getDirectoryHandle(floorPlansDirName(), { create: false });
-    });
+    return projectDir(projectHandle, [projectSavesDirName(), floorPlansDirName()], false);
   }
   function levelFileName(projectName, levelName){
     return sanitizeFileBase(projectName) + " - " + sanitizeFileBase(levelName) + ".json";
   }
   // Read-only: this app never creates "Project Saves/Floor Plans/" itself
-  // (create:false throughout) -- a flat project with no plan saved for this
-  // particular level yet resolves null here, same as before.
+  // (create:false throughout). Resolves the parsed level, or null ONLY when
+  // the file genuinely isn't there (no Floor Plans folder yet / no such
+  // file). (2026-09-25, sweep -- v6, Site Measure v46's readFlatLevelFileByName
+  // shape) A file that EXISTS but can't be read or parsed (a Dropbox
+  // placeholder still syncing in, a truncated read on an Android SAF
+  // folder) REJECTS with {code:"read_failed"} instead of quietly reading as
+  // "no plan": before this, readLevelFile turned that into "No saved plan
+  // found for this level yet." -- a label that lied for a level that very
+  // much exists. This app never writes level files, so this is a display
+  // read, but the caller now says "couldn't read, try again" instead.
   function readLevelFileByName(projectHandle, fname){
     return getFloorPlansDir(projectHandle).then(function(dirH){
-      return dirH.getFileHandle(fname);
-    }).then(function(fh){
-      return fh.getFile();
-    }).then(function(file){
-      return file.text();
-    }).then(function(text){
-      try{
+      return readTextFileStrict(dirH, fname, "level file " + fname, function(text){
         var parsed = JSON.parse(text);
-        if (!parsed || typeof parsed !== "object" || !parsed.name) return null;
+        if (!parsed || typeof parsed !== "object" || !parsed.name) throw new Error("level file has no name field");
         return {
           name: parsed.name,
           imageDataURL: parsed.imageDataURL || null,
@@ -1211,8 +1543,12 @@
           imageH: parsed.imageH || 0,
           markers: Array.isArray(parsed.markers) ? parsed.markers : []
         };
-      }catch(e){ return null; }
-    }, function(){ return null; });
+      }).then(function(res){ return res.found ? res.value : null; });
+    }, function(err){
+      if (isNotFoundErr(err)) return null; // no "Project Saves/Floor Plans" at all -- a legacy or brand-new project
+      forgetProjectDir(projectHandle, [projectSavesDirName()]);
+      return Promise.reject(readFailedErr("Floor Plans folder", err));
+    });
   }
   // Legacy per-Level-folder plan reader (2026-09-23) -- Andrew, verbatim:
   // "scheduler doesnt utilise the viewer properly. floor plan in not
@@ -1230,29 +1566,29 @@
   // kept in sync with that file's naming/schema so a file either app reads
   // is read back identically).
   function legacyLevelSaveFilename(levelName){ return sanitizeFileBase(levelName) + ".utzline.json"; }
+  // Same strict rule as readLevelFileByName: null only for a genuinely
+  // absent legacy file, read_failed for one that exists but won't read.
   function readLegacyLevelFile(projectHandle, levelName){
     if (!projectHandle) return Promise.resolve(null);
     return projectHandle.getDirectoryHandle(levelName, { create: false }).then(function(levelH){
       return levelH.getDirectoryHandle("saves", { create: false });
     }).then(function(savesH){
-      return savesH.getFileHandle(legacyLevelSaveFilename(levelName), { create: false });
-    }).then(function(fh){
-      return fh.getFile();
-    }).then(function(file){
-      return file.text();
-    }).then(function(text){
-      var parsed = null;
-      try{ parsed = JSON.parse(text); }catch(e){ parsed = null; }
-      if (!parsed || typeof parsed !== "object") return null;
-      return {
-        name: levelName,
-        imageDataURL: parsed.imageDataURL || null,
-        imageTiles: parsed.imageTiles || null,
-        imageW: parsed.imageW || 0,
-        imageH: parsed.imageH || 0,
-        markers: Array.isArray(parsed.objects) ? parsed.objects : []
-      };
-    }, function(){ return null; });
+      return readTextFileStrict(savesH, legacyLevelSaveFilename(levelName), "legacy level file for " + levelName, function(text){
+        var parsed = JSON.parse(text);
+        if (!parsed || typeof parsed !== "object") throw new Error("not a level object");
+        return {
+          name: levelName,
+          imageDataURL: parsed.imageDataURL || null,
+          imageTiles: parsed.imageTiles || null,
+          imageW: parsed.imageW || 0,
+          imageH: parsed.imageH || 0,
+          markers: Array.isArray(parsed.objects) ? parsed.objects : []
+        };
+      }).then(function(res){ return res.found ? res.value : null; });
+    }, function(err){
+      if (isNotFoundErr(err)) return null;
+      return Promise.reject(readFailedErr("legacy level folder for " + levelName, err));
+    });
   }
   // Tries the flat shape first (the common case for anything touched by
   // Site Measure/Projects since the cutover), then falls back to the
@@ -1260,7 +1596,9 @@
   // ITP app already uses. Whichever shape actually has a real image wins;
   // a flat record with no image (an empty placeholder) still falls through
   // to a legacy file if one exists, rather than reporting "no plan" when
-  // one is genuinely there.
+  // one is genuinely there. A read_failed from either shape propagates
+  // (each reader already retried once) -- openPlanCanvasForLevel tells the
+  // person to try again rather than claiming there's no plan.
   function readLevelFile(projectHandle, projectName, levelName){
     if (!projectHandle) return Promise.resolve(null);
     return readLevelFileByName(projectHandle, levelFileName(projectName, levelName)).then(function(flatLevel){
@@ -1272,27 +1610,56 @@
       });
     });
   }
+  // (2026-09-25, sweep -- v6, Site Measure v46's own listFlatLevelNames) Used
+  // to read and JSON.parse EVERY level file in the project -- each one
+  // carrying its full base64 floor plan, often several MB -- one after
+  // another, just to pull out each file's `name` field, every time a
+  // project schedule was opened. On Andrew's tablet that alone was seconds
+  // per visit. Now: the files are stat'ed in parallel (getFile() gives
+  // size + lastModified without reading the body), and a per-project
+  // IndexedDB note of "<file> -> name @ size/lastModified" answers every
+  // file that hasn't changed since last time; only a new or changed file is
+  // actually read. Pure display (the level picker): an unreadable file
+  // (mid-sync) is skipped for this listing rather than failing the whole
+  // list, deliberately -- nothing is ever written from this result.
   function listFlatLevelNames(projectHandle){
+    var cacheKey = "sss-flatLevelNames\u0000" + (projectsRootName || "") + "\u0000" + ((projectHandle && projectHandle.name) || "");
     return getFloorPlansDir(projectHandle).then(function(dirH){
-      var fnames = [];
+      var handles = [];
       var iter = dirH.values();
       function step(){
         return iter.next().then(function(res){
-          if (res.done) return fnames;
-          if (res.value && res.value.kind === "file" && /\.json$/i.test(res.value.name)) fnames.push(res.value.name);
+          if (res.done) return handles;
+          if (res.value && res.value.kind === "file" && /\.json$/i.test(res.value.name)) handles.push(res.value);
           return step();
         });
       }
       return step();
-    }, function(){ return []; }).then(function(fnames){
-      return fnames.reduce(function(chain, fname){
-        return chain.then(function(acc){
-          return readLevelFileByName(projectHandle, fname).then(function(level){
-            if (level) acc.push(level.name);
-            return acc;
-          });
+    }, function(){ return []; }).then(function(handles){
+      if (!handles.length) return [];
+      return idbGet(cacheKey).catch(function(){ return null; }).then(function(cached){
+        cached = (cached && typeof cached === "object") ? cached : {};
+        var next = {};
+        return Promise.all(handles.map(function(fh){
+          return fh.getFile().then(function(file){
+            var hit = cached[fh.name];
+            if (hit && hit.name && hit.size === file.size && hit.lastModified === file.lastModified){
+              next[fh.name] = hit;
+              return hit.name;
+            }
+            return file.text().then(function(text){
+              var parsed = null;
+              try{ parsed = JSON.parse(text); }catch(e){ parsed = null; }
+              var name = (parsed && typeof parsed === "object" && parsed.name) ? parsed.name : null;
+              if (name) next[fh.name] = { name: name, size: file.size, lastModified: file.lastModified };
+              return name;
+            });
+          }).catch(function(){ return null; });
+        })).then(function(names){
+          idbSet(cacheKey, next).catch(function(){});
+          return names.filter(Boolean);
         });
-      }, Promise.resolve([]));
+      });
     }).then(function(names){
       return names.sort(function(a, b){ return a.localeCompare(b, undefined, { sensitivity: "base" }); });
     });
@@ -1325,15 +1692,13 @@
   }
 
   /* ============================== joinery items (read-only) ============================== */
+  // [] only when the file genuinely isn't there (a project with no items
+  // yet); a file that exists but won't read/parse rejects read_failed
+  // (2026-09-25, sweep -- v6) so the table says "couldn't read" instead of
+  // "No joinery items in this project yet." for a project that has plenty.
   function readJoineryItems(projectHandle){
     if (!projectHandle) return Promise.resolve([]);
-    return projectHandle.getFileHandle("joinery-items.json", { create: false }).then(function(fh){
-      return fh.getFile();
-    }).then(function(file){
-      return file.text();
-    }).then(function(text){
-      try{ var arr = JSON.parse(text); return Array.isArray(arr) ? arr : []; }catch(e){ return []; }
-    }, function(){ return []; });
+    return readJsonArrayFileStrict(projectHandle, "joinery-items.json", "joinery-items.json");
   }
 
   /* ============================== shared joinery-status pipeline (read-only) ==============================
@@ -1416,15 +1781,45 @@
      project folder already (it writes its own solid-surface-schedule.json)
      to perform that one-time migration. */
   function joineryStatusEventsBranchName(){ return "Joinery Status"; }
+  // Memoised per project (getCachedDir) -- the whole family re-walked
+  // "Project Saves" -> "Joinery Status" on every read; now once per session.
   function getJoineryStatusEventsRootDir(projectHandle, create){
-    return projectHandle.getDirectoryHandle(projectSavesDirName(), { create: !!create }).then(function(psH){
-      return psH.getDirectoryHandle(joineryStatusEventsBranchName(), { create: !!create });
-    });
+    return projectDir(projectHandle, [projectSavesDirName(), joineryStatusEventsBranchName()], !!create);
   }
   function getJoineryStatusItemDir(projectHandle, key, create){
     return getJoineryStatusEventsRootDir(projectHandle, create).then(function(rootH){
       return rootH.getDirectoryHandle(key, { create: !!create });
     });
+  }
+  // Every per-item event folder directly under an events root, as the
+  // HANDLES the listing already hands back -- not names to look up again
+  // one by one (2026-09-25, sweep -- v6: that was one named folder scan per
+  // item per read, on top of the two-level walk above, for every item in
+  // every project).
+  function listEventItemDirs(rootH){
+    var dirs = [];
+    var iter = rootH.values();
+    function step(){
+      return iter.next().then(function(res){
+        if (res.done) return dirs;
+        if (res.value && res.value.kind === "directory") dirs.push(res.value);
+        return step();
+      });
+    }
+    return step();
+  }
+  function listJsonFileHandlesIn(dirH){
+    if (!dirH || typeof dirH.values !== "function") return Promise.resolve([]);
+    var handles = [];
+    var iter = dirH.values();
+    function step(){
+      return iter.next().then(function(res){
+        if (res.done) return handles;
+        if (res.value && res.value.kind === "file" && /\.json$/i.test(res.value.name)) handles.push(res.value);
+        return step();
+      });
+    }
+    return step();
   }
   function statusEventStampFromIso(iso){
     function p2(n){ return (n < 10 ? "0" : "") + n; }
@@ -1438,28 +1833,70 @@
     var slug = sanitizeUserName(user) || "Unnamed";
     return slug + " - " + stamp + " - " + kind + ".json";
   }
+  // Pure-display read, deliberately soft (2026-09-25 audit): one event file
+  // that's mid-sync reads as null and is left out of THIS fold -- the
+  // tables then show that item one stage behind (or one cut behind, or the
+  // main schedule's prefill one save behind) for a moment and catch up on
+  // the next refresh. Nothing is ever written from a folded status /
+  // machining-flag / main-schedule record here (this app never writes any
+  // of those three branches, only its own solid-surface-schedule.json,
+  // whose reader is strict -- see readJoinerySchedule), so a missing event
+  // can't be copied forward into anything. The strict variant below is used
+  // where a fold must be complete to be trusted (the per-item main-schedule
+  // prefill, which can otherwise silently offer a superseded date).
   function readJsonFileHandle(fh){
     return fh.getFile().then(function(file){ return file.text(); }).then(function(text){
       try{ var parsed = JSON.parse(text); return (parsed && typeof parsed === "object") ? parsed : null; }catch(e){ return null; }
     }, function(){ return null; });
   }
-  function listJoineryStatusEventsForItem(projectHandle, key){
-    return getJoineryStatusItemDir(projectHandle, key, false).then(function(dirH){
-      if (!dirH || typeof dirH.values !== "function") return [];
-      var handles = [];
-      var iter = dirH.values();
-      function step(){
-        return iter.next().then(function(res){
-          if (res.done) return handles;
-          if (res.value && res.value.kind === "file" && /\.json$/i.test(res.value.name)) handles.push(res.value);
-          return step();
-        });
-      }
-      return step();
-    }, function(){ return []; }).then(function(handles){
-      return Promise.all(handles.map(readJsonFileHandle));
-    }).then(function(events){
-      return events.filter(function(e){ return e && typeof e === "object"; });
+  function readJsonFileHandleStrict(fh){
+    function attempt(){
+      return fh.getFile().then(function(file){ return file.text(); }).then(function(text){
+        var parsed;
+        try{ parsed = JSON.parse(text); }catch(e){ return Promise.reject(readFailedErr(fh.name, e)); }
+        if (!parsed || typeof parsed !== "object") return Promise.reject(readFailedErr(fh.name, new Error("not a JSON object")));
+        return parsed;
+      }, function(err){ return Promise.reject(isReadFailed(err) ? err : readFailedErr(fh.name, err)); });
+    }
+    return attempt().catch(function(){ return pause(READ_RETRY_MS).then(attempt); });
+  }
+  /* Folded-event cache (2026-09-25, sweep -- v6, speed). Every event file in
+     "Joinery Status" / "Machining Flags" / "Joinery Schedule" is IMMUTABLE
+     by design (one file per action, named "<user> - <yyyy-mm-dd
+     hh-mm-ss-mmm> - <kind>.json", never rewritten -- see the v3/v4/v5
+     notes), so the exact SET of filenames in an item's folder fully
+     determines its fold. The listing already hands those names back for
+     free; what cost a call each was the getFile() per event file, on every
+     item, on every table open -- ~3-5 calls per item, hundreds per project,
+     hundreds of ms each on Andrew's tablet. Now each item's last fold is
+     remembered in this app's own IndexedDB against that filename set and
+     reused verbatim while the set is unchanged; only an item with a new
+     event file is actually read. Only a fold in which EVERY file read
+     cleanly is remembered -- a fold that had to skip a mid-sync file is
+     recomputed next time ("unreadable is not empty" carries through to the
+     cache). Keyed under "sss-" + the root name + the project + the branch
+     (see the DB_NAME note above for why the prefix matters). */
+  function readFoldedEventBranch(projectHandle, rootH, branch, foldFn){
+    var cacheKey = "sss-eventFolds\u0000" + (projectsRootName || "") + "\u0000" + ((projectHandle && projectHandle.name) || "") + "\u0000" + branch;
+    return Promise.all([listEventItemDirs(rootH), idbGet(cacheKey).catch(function(){ return null; })]).then(function(r){
+      var dirs = r[0], cached = (r[1] && typeof r[1] === "object") ? r[1] : {};
+      var next = {};
+      return Promise.all(dirs.map(function(dirH){
+        return listJsonFileHandlesIn(dirH).then(function(handles){
+          var sig = handles.map(function(h){ return h.name; }).sort().join("\u0000");
+          var hit = cached[dirH.name];
+          if (hit && hit.sig === sig){ next[dirH.name] = hit; return hit.rec; }
+          return Promise.all(handles.map(readJsonFileHandle)).then(function(events){
+            var allRead = events.every(function(e){ return e && typeof e === "object"; });
+            var rec = foldFn(events.filter(function(e){ return e && typeof e === "object"; }));
+            if (allRead) next[dirH.name] = { sig: sig, rec: rec };
+            return rec;
+          });
+        }, function(){ return null; });
+      })).then(function(list){
+        idbSet(cacheKey, next).catch(function(){});
+        return list.filter(Boolean);
+      });
     });
   }
   function foldJoineryStatusEvents(events){
@@ -1484,21 +1921,38 @@
     if (latestJobNote){ rec.jobNote = true; rec.jobNoteAt = latestJobNote.at; rec.jobNoteBy = latestJobNote.by || ""; }
     return rec;
   }
+  // [] only when the legacy file genuinely isn't there; read_failed for one
+  // that exists but won't read -- see migrateLegacyJoineryStatusIfNeeded.
   function readLegacyJoineryStatusFile(projectHandle){
-    return projectHandle.getFileHandle("joinery-status.json", { create: false }).then(function(fh){
-      return fh.getFile();
-    }).then(function(file){
-      return file.text();
-    }).then(function(text){
-      try{ var arr = JSON.parse(text); return Array.isArray(arr) ? arr : []; }catch(e){ return []; }
-    }, function(){ return []; });
+    return readJsonArrayFileStrict(projectHandle, "joinery-status.json", "joinery-status.json");
   }
+  /* (2026-09-25, sweep -- v6, "unreadable is not empty".) The original order
+     was: create the events folder, THEN read the legacy file, THEN write
+     one event per history entry -- with the legacy read collapsing every
+     failure to []. On a Dropbox-synced Android folder that meant: legacy
+     file mid-sync -> reads as nothing -> an EMPTY events folder is created
+     -> from that moment every app in the family sees the events folder
+     exists and never reads the legacy file again -> every item's status
+     history gone from every app's point of view, with the legacy file
+     still sitting there untouched. Now the legacy file is read FIRST
+     (strict: [] only for genuinely absent, one retry then read_failed
+     otherwise) and the events folder is only created once that read has
+     succeeded; a failed read rejects and creates NOTHING, so the next open
+     simply tries again. Also memoised per project per session -- once a
+     project is known to be migrated there's no reason to re-check the
+     folder on every read. The same reordering is applied to this app's
+     other two migrations (the main Scheduler's joinery-schedule.json and
+     Machine Schedule's machining-flags.json) below. */
   function migrateLegacyJoineryStatusIfNeeded(projectHandle){
+    var memoKey = (projectHandle && projectHandle.name || "") + "\u0000status";
+    if (migratedThisSession[memoKey]) return Promise.resolve(false);
     return getJoineryStatusEventsRootDir(projectHandle, false).then(function(){
+      migratedThisSession[memoKey] = true;
       return false;
-    }, function(){
-      return getJoineryStatusEventsRootDir(projectHandle, true).then(function(){
-        return readLegacyJoineryStatusFile(projectHandle);
+    }, function(err){
+      if (!isNotFoundErr(err)) return Promise.reject(readFailedErr("Joinery Status folder", err)); // can't tell -> don't migrate
+      return readLegacyJoineryStatusFile(projectHandle).then(function(list){
+        return getJoineryStatusEventsRootDir(projectHandle, true).then(function(){ return list; });
       }).then(function(list){
         var writes = [];
         list.forEach(function(rec){
@@ -1533,29 +1987,31 @@
           }
         });
         return Promise.all(writes);
-      }).then(function(){ return true; }).catch(function(){ return false; });
+      }).then(function(){ migratedThisSession[memoKey] = true; return true; }).catch(function(err){
+        // A legacy file that exists but couldn't be read is the one failure
+        // that must NOT be swallowed -- nothing was created, the caller
+        // surfaces it, and the next open tries again.
+        if (isReadFailed(err)) return Promise.reject(err);
+        return false;
+      });
     });
   }
+  // Rejects read_failed only when the legacy file (or the events folder's
+  // own existence check) can't be read -- the loaders then say so rather
+  // than showing every item as "Created". Per-item event folders are read
+  // straight from the handles the listing returns (listEventItemDirs), in
+  // parallel, through the folded-event cache, with no named lookup per item.
   function readJoineryStatuses(projectHandle){
     if (!projectHandle) return Promise.resolve([]);
     return migrateLegacyJoineryStatusIfNeeded(projectHandle).then(function(){
-      return getJoineryStatusEventsRootDir(projectHandle, false).then(function(rootH){
-        var keys = [];
-        var iter = rootH.values();
-        function step(){
-          return iter.next().then(function(res){
-            if (res.done) return keys;
-            if (res.value && res.value.kind === "directory") keys.push(res.value.name);
-            return step();
-          });
-        }
-        return step();
-      }, function(){ return null; });
-    }).then(function(keys){
-      if (keys === null) return readLegacyJoineryStatusFile(projectHandle);
-      return Promise.all(keys.map(function(key){
-        return listJoineryStatusEventsForItem(projectHandle, key).then(foldJoineryStatusEvents);
-      })).then(function(list){ return list.filter(Boolean); });
+      return getJoineryStatusEventsRootDir(projectHandle, false).then(null, function(err){
+        if (isNotFoundErr(err)) return null;
+        forgetProjectDir(projectHandle, [projectSavesDirName()]);
+        return Promise.reject(readFailedErr("Joinery Status folder", err));
+      });
+    }).then(function(rootH){
+      if (rootH === null) return readLegacyJoineryStatusFile(projectHandle);
+      return readFoldedEventBranch(projectHandle, rootH, joineryStatusEventsBranchName(), foldJoineryStatusEvents);
     });
   }
   function findJoineryStatus(list, level, room, joineryId){
@@ -1581,10 +2037,11 @@
   function joineryItemPageKey(levelName, roomName, joineryCode){
     return sanitizeFileBase(levelName) + " - " + sanitizeFileBase(roomName) + (joineryCode ? " - " + sanitizeFileBase(joineryCode) : "");
   }
+  // "Project Saves/Job Notes" memoised per project (getCachedDir); the
+  // per-item folder is looked up fresh each time (a note can be added from
+  // Site Measure at any moment).
   function getJobNotesDirForItem(projectHandle, key){
-    return projectHandle.getDirectoryHandle(projectSavesDirName(), { create: false }).then(function(psH){
-      return psH.getDirectoryHandle("Job Notes", { create: false });
-    }).then(function(jnH){
+    return projectDir(projectHandle, [projectSavesDirName(), "Job Notes"], false).then(function(jnH){
       return jnH.getDirectoryHandle(key, { create: false });
     });
   }
@@ -1634,22 +2091,184 @@
      does make into that file). One record per scheduled Solid Surface item,
      matched by the exact same (level, room, joineryId) triple
      joinery-status.json already uses. */
+  /* ---- solid-surface-schedule.json v2: event-sourced storage (v7, 2026-09-26) ----
+     The v6 sweep (see README's "deliberately left alone") made the old
+     whole-file read *safe against an unreadable file*, but it was still one
+     shared JSON array, read-modified-and-rewritten WHOLE on every single
+     Save/Clear -- so two site managers scheduling different Solid Surface
+     items in the same project at the same moment could still silently
+     clobber each other, last write wins, exactly the class of bug the MAIN
+     Scheduler's own joinery-schedule.json was rebuilt to eliminate in its
+     v15 (see readMainJoinerySchedule's own comment and foldMainJoinerySchedule
+     right below -- the read-only port of that exact rebuild already lived
+     in this file as this app's closest template). The per-device name+PIN
+     identity this app already has (deviceUserName) is exactly the missing
+     piece: this file now follows the SAME pattern. Every Save or Clear is
+     its own immutable event ({kind:"set", ...every field together...} or
+     {kind:"clear"}), filed under "Project Saves/Solid Surface Schedule/
+     <Level> - <Room> - <Code>/" -- a DIFFERENT branch name from the main
+     Scheduler's own "Joinery Schedule" branch (same project, same
+     "Project Saves/" folder) so the two event trees never collide. Folding
+     an item's events means taking the single LATEST one by timestamp: a
+     "clear" means no schedule, otherwise that event's own fields ARE the
+     record -- identical fold shape to foldMainJoinerySchedule below (same
+     field names: level, room, joineryId, requiredDeliveryDate,
+     manufactureLeadTimeDays, manufactureStartDate, updatedAt, setBy) and to
+     the MAIN Scheduler's own joinery-schedule.json events, DELIBERATELY:
+     this app only ever reads its OWN branch today (the main Scheduler does
+     not reference solid-surface-schedule.json at all, confirmed by grep --
+     out of scope for this round), but if a future round wants the main
+     Scheduler (or UTZLINE Projects) to read this app's Solid Surface
+     schedule read-only, the exact read-only port already sitting below
+     (readMainJoinerySchedule / foldMainJoinerySchedule /
+     migrateLegacyMainJoineryScheduleIfNeeded / readMainScheduleRecordForItem)
+     is a copy-paste of this shape, just re-pointed at "Solid Surface
+     Schedule" instead of "Joinery Schedule". migrateLegacyJoineryScheduleIfNeeded
+     migrates any real, already-recorded schedule from the old whole-file
+     solid-surface-schedule.json automatically, once, idempotently, the
+     first time this app opens a project after this update -- the old file
+     is left on disk afterward, untouched, exactly like every other legacy
+     migration in this family. Reuses statusEventStampFromIso/
+     statusEventFileName/readFoldedEventBranch/readJsonArrayFileStrict,
+     already defined above/below for the main Scheduler's own read-only
+     port. */
   function joineryScheduleFilename(){ return "solid-surface-schedule.json"; }
+  function joineryScheduleEventsBranchName(){ return "Solid Surface Schedule"; }
+  function getJoineryScheduleEventsRootDir(projectHandle, create){
+    return projectDir(projectHandle, [projectSavesDirName(), joineryScheduleEventsBranchName()], !!create);
+  }
+  function getJoineryScheduleItemDir(projectHandle, key, create){
+    return getJoineryScheduleEventsRootDir(projectHandle, create).then(function(rootH){
+      return rootH.getDirectoryHandle(key, { create: !!create });
+    });
+  }
+  function foldJoinerySchedule(events){
+    if (!events || !events.length) return null;
+    var latest = null;
+    events.forEach(function(e){ if (!latest || (e.at || "") > (latest.at || "")) latest = e; });
+    if (!latest || latest.kind === "clear") return null;
+    return {
+      level: latest.level || "", room: latest.room || "", joineryId: latest.joineryId || "",
+      requiredDeliveryDate: latest.requiredDeliveryDate || "",
+      manufactureLeadTimeDays: latest.manufactureLeadTimeDays,
+      manufactureStartDate: latest.manufactureStartDate || "",
+      updatedAt: latest.at,
+      setBy: latest.by || ""
+    };
+  }
+  // [] only when the legacy file genuinely isn't there; read_failed for one
+  // that exists but won't read -- see migrateLegacyJoineryScheduleIfNeeded.
+  function readLegacyJoinerySchedule(projectHandle){
+    return readJsonArrayFileStrict(projectHandle, joineryScheduleFilename(), joineryScheduleFilename());
+  }
+  // Same reordering as every other legacy migration in this app (the v6
+  // "unreadable is not empty" rule): read the legacy file FIRST, strictly;
+  // only then create the events folder and write the events -- a legacy
+  // solid-surface-schedule.json that's mid-sync no longer becomes an empty
+  // events folder that this app then trusts forever. Memoised per project
+  // per session (its own key suffix, alongside the main-schedule/status/
+  // machining-flags migrations' own keys in this same migratedThisSession
+  // map).
+  function migrateLegacyJoineryScheduleIfNeeded(projectHandle){
+    var memoKey = (projectHandle && projectHandle.name || "") + "\u0000ownSchedule";
+    if (migratedThisSession[memoKey]) return Promise.resolve(false);
+    return getJoineryScheduleEventsRootDir(projectHandle, false).then(function(){
+      migratedThisSession[memoKey] = true;
+      return false;
+    }, function(err){
+      if (!isNotFoundErr(err)) return Promise.reject(readFailedErr("Solid Surface Schedule folder", err)); // can't tell -> don't migrate
+      return readLegacyJoinerySchedule(projectHandle).then(function(list){
+        return getJoineryScheduleEventsRootDir(projectHandle, true).then(function(){ return list; });
+      }).then(function(list){
+        var writes = [];
+        list.forEach(function(rec){
+          if (!rec) return;
+          var key = joineryItemPageKey(rec.level, rec.room, rec.joineryId);
+          var at = rec.updatedAt || new Date(0).toISOString();
+          var payload = {
+            kind: "set", level: rec.level || "", room: rec.room || "", joineryId: rec.joineryId || "",
+            requiredDeliveryDate: rec.requiredDeliveryDate || "",
+            manufactureLeadTimeDays: rec.manufactureLeadTimeDays,
+            manufactureStartDate: rec.manufactureStartDate || "",
+            by: rec.setBy || "", at: at
+          };
+          var stamp = statusEventStampFromIso(at);
+          writes.push(getJoineryScheduleItemDir(projectHandle, key, true).then(function(dirH){
+            return dirH.getFileHandle(statusEventFileName(payload.by, stamp, "set"), { create: true });
+          }).then(function(fh){
+            return fh.createWritable();
+          }).then(function(w){
+            return w.write(JSON.stringify(payload)).then(function(){ return w.close(); });
+          }).catch(function(){}));
+        });
+        return Promise.all(writes);
+      }).then(function(){ migratedThisSession[memoKey] = true; return true; }).catch(function(err){
+        if (isReadFailed(err)) return Promise.reject(err); // legacy file exists but couldn't be read: nothing created, surface it
+        return false;
+      });
+    });
+  }
+  // Whole-project fold of this app's own schedule -- feeds the Overall/
+  // per-project table reads AND the Set Schedule dialog's own-record check
+  // (findScheduleRecord against the array this returns), so this keeps
+  // returning a plain array and neither of those call sites needed a
+  // signature change when this went event-sourced (2026-09-26, v7). Note
+  // this is now a SOFT fold per item (readFoldedEventBranch, same as every
+  // other reader branch in this file) rather than the old whole-file's
+  // STRICT read -- that strictness existed only because a Save/Clear used
+  // to read this exact list first and rewrite the WHOLE file on top of it
+  // (a stale read here could silently clobber every other item's record);
+  // writeJoineryScheduleEvent below never reads this list at all, it only
+  // ever appends one new event file, so that hazard no longer exists and a
+  // mid-sync event file for one item now just makes THAT item look one
+  // save behind for a moment, exactly like every other soft-folded branch
+  // in this app (joinery-status.json, machining-flags.json, the main
+  // Scheduler's own joinery-schedule.json read-only port below).
   function readJoinerySchedule(projectHandle){
     if (!projectHandle) return Promise.resolve([]);
-    return projectHandle.getFileHandle(joineryScheduleFilename(), { create: false }).then(function(fh){
-      return fh.getFile();
-    }).then(function(file){
-      return file.text();
-    }).then(function(text){
-      try{ var arr = JSON.parse(text); return Array.isArray(arr) ? arr : []; }catch(e){ return []; }
-    }, function(){ return []; });
+    return migrateLegacyJoineryScheduleIfNeeded(projectHandle).then(function(){
+      return getJoineryScheduleEventsRootDir(projectHandle, false).then(null, function(err){
+        if (isNotFoundErr(err)) return null;
+        forgetProjectDir(projectHandle, [projectSavesDirName()]);
+        return Promise.reject(readFailedErr("Solid Surface Schedule folder", err));
+      });
+    }).then(function(rootH){
+      if (rootH === null) return readLegacyJoinerySchedule(projectHandle);
+      return readFoldedEventBranch(projectHandle, rootH, joineryScheduleEventsBranchName(), foldJoinerySchedule);
+    });
   }
-  function writeJoinerySchedule(projectHandle, list){
-    return projectHandle.getFileHandle(joineryScheduleFilename(), { create: true }).then(function(fh){
+  // Appends one "set" (full schedule record) or "clear" event for a single
+  // item, replacing the old read-whole-array/change-one-record/
+  // write-whole-array-back pattern -- two site managers scheduling
+  // different items (or even the same one) in this project at the same
+  // moment can now never collide, since neither is ever writing to the
+  // same file (2026-09-26, v7 -- mirrors the MAIN Scheduler's own
+  // writeJoineryScheduleEvent for its joinery-schedule.json exactly, just
+  // targeting this app's own branch instead). Runs the legacy migration
+  // check first (memoised, so free after the first call per project): the
+  // events folder must never be brought into existence by a plain Save
+  // while a legacy solid-surface-schedule.json still sits there
+  // unmigrated -- that folder existing is what tells this app the legacy
+  // file is history. A migration that can't read the legacy file rejects
+  // here too, so the Save/Clear reports "couldn't save" instead. Resolves
+  // the folded record the event produces (the one a re-read would give),
+  // so the caller can patch its table rows in place without re-reading the
+  // folder.
+  function writeJoineryScheduleEvent(projectHandle, level, room, joineryId, kind, fields, updatedBy){
+    var key = joineryItemPageKey(level, room, joineryId);
+    var at = new Date().toISOString();
+    var payload = Object.assign({ kind: kind, level: level, room: room || "", joineryId: joineryId || "", by: updatedBy || "", at: at }, fields || {});
+    var stamp = statusEventStampFromIso(at);
+    return migrateLegacyJoineryScheduleIfNeeded(projectHandle).then(function(){
+      return getJoineryScheduleItemDir(projectHandle, key, true);
+    }).then(function(dirH){
+      return dirH.getFileHandle(statusEventFileName(updatedBy, stamp, kind), { create: true });
+    }).then(function(fh){
       return fh.createWritable();
     }).then(function(w){
-      return w.write(JSON.stringify(list)).then(function(){ return w.close(); });
+      return w.write(JSON.stringify(payload)).then(function(){ return w.close(); });
+    }).then(function(){
+      return foldJoinerySchedule([payload]);
     });
   }
   function findScheduleRecord(list, level, room, joineryId){
@@ -1664,8 +2283,8 @@
      Andrew: "this schedule pulls its site delivery date from the main
      schedule, but could be independant if required." The MAIN Scheduler
      app's own file, "joinery-schedule.json" -- this app NEVER writes to
-     it (writeJoinerySchedule above only ever targets THIS app's own
-     solid-surface-schedule.json). Read only from openScheduleModal, and
+     it (writeJoineryScheduleEvent above only ever targets THIS app's own
+     solid-surface-schedule.json events branch). Read only from openScheduleModal, and
      only when this item has no solid-surface-schedule.json record of its
      own yet -- see that function for the one-time prefill logic. */
   /* ---- joinery-schedule.json v2: event-sourced storage (v5, 2026-09-24) ----
@@ -1681,33 +2300,13 @@
      otherwise that event's own fields ARE the record. */
   function mainJoineryScheduleFilename(){ return "joinery-schedule.json"; }
   function mainJoineryScheduleEventsBranchName(){ return "Joinery Schedule"; }
+  // Memoised per project (getCachedDir) -- see getJoineryStatusEventsRootDir.
   function getMainJoineryScheduleEventsRootDir(projectHandle, create){
-    return projectHandle.getDirectoryHandle(projectSavesDirName(), { create: !!create }).then(function(psH){
-      return psH.getDirectoryHandle(mainJoineryScheduleEventsBranchName(), { create: !!create });
-    });
+    return projectDir(projectHandle, [projectSavesDirName(), mainJoineryScheduleEventsBranchName()], !!create);
   }
   function getMainJoineryScheduleItemDir(projectHandle, key, create){
     return getMainJoineryScheduleEventsRootDir(projectHandle, create).then(function(rootH){
       return rootH.getDirectoryHandle(key, { create: !!create });
-    });
-  }
-  function listMainJoineryScheduleEventsForItem(projectHandle, key){
-    return getMainJoineryScheduleItemDir(projectHandle, key, false).then(function(dirH){
-      if (!dirH || typeof dirH.values !== "function") return [];
-      var handles = [];
-      var iter = dirH.values();
-      function step(){
-        return iter.next().then(function(res){
-          if (res.done) return handles;
-          if (res.value && res.value.kind === "file" && /\.json$/i.test(res.value.name)) handles.push(res.value);
-          return step();
-        });
-      }
-      return step();
-    }, function(){ return []; }).then(function(handles){
-      return Promise.all(handles.map(readJsonFileHandle));
-    }).then(function(events){
-      return events.filter(function(e){ return e && typeof e === "object"; });
     });
   }
   function foldMainJoinerySchedule(events){
@@ -1724,21 +2323,29 @@
       setBy: latest.by || ""
     };
   }
+  // [] only when the legacy file genuinely isn't there; read_failed for one
+  // that exists but won't read -- see migrateLegacyMainJoineryScheduleIfNeeded.
   function readLegacyMainJoinerySchedule(projectHandle){
-    return projectHandle.getFileHandle(mainJoineryScheduleFilename(), { create: false }).then(function(fh){
-      return fh.getFile();
-    }).then(function(file){
-      return file.text();
-    }).then(function(text){
-      try{ var arr = JSON.parse(text); return Array.isArray(arr) ? arr : []; }catch(e){ return []; }
-    }, function(){ return []; });
+    return readJsonArrayFileStrict(projectHandle, mainJoineryScheduleFilename(), mainJoineryScheduleFilename());
   }
+  // Same reordering as migrateLegacyJoineryStatusIfNeeded (2026-09-25,
+  // sweep -- v6): read the legacy file FIRST, strictly; only then create the
+  // events folder and write the events. The MAIN Scheduler's legacy
+  // joinery-schedule.json that's mid-sync no longer becomes an empty events
+  // folder that the Scheduler itself (and UTZLINE Projects) then trusts
+  // forever -- this app performing that migration for a file it only ever
+  // READS is exactly why getting the order right matters here. Memoised per
+  // project per session.
   function migrateLegacyMainJoineryScheduleIfNeeded(projectHandle){
+    var memoKey = (projectHandle && projectHandle.name || "") + "\u0000mainSchedule";
+    if (migratedThisSession[memoKey]) return Promise.resolve(false);
     return getMainJoineryScheduleEventsRootDir(projectHandle, false).then(function(){
+      migratedThisSession[memoKey] = true;
       return false;
-    }, function(){
-      return getMainJoineryScheduleEventsRootDir(projectHandle, true).then(function(){
-        return readLegacyMainJoinerySchedule(projectHandle);
+    }, function(err){
+      if (!isNotFoundErr(err)) return Promise.reject(readFailedErr("Joinery Schedule folder", err)); // can't tell -> don't migrate
+      return readLegacyMainJoinerySchedule(projectHandle).then(function(list){
+        return getMainJoineryScheduleEventsRootDir(projectHandle, true).then(function(){ return list; });
       }).then(function(list){
         var writes = [];
         list.forEach(function(rec){
@@ -1762,29 +2369,66 @@
           }).catch(function(){}));
         });
         return Promise.all(writes);
-      }).then(function(){ return true; }).catch(function(){ return false; });
+      }).then(function(){ migratedThisSession[memoKey] = true; return true; }).catch(function(err){
+        if (isReadFailed(err)) return Promise.reject(err); // legacy file exists but couldn't be read: nothing created, surface it
+        return false;
+      });
     });
   }
+  // Whole-project fold of the main Scheduler's schedule (kept for the test
+  // hook and as the general reader; the dialog itself now uses the per-item
+  // strict reader below). Rejects read_failed only when the legacy file or
+  // the folder's own existence check can't be read.
   function readMainJoinerySchedule(projectHandle){
     if (!projectHandle) return Promise.resolve([]);
     return migrateLegacyMainJoineryScheduleIfNeeded(projectHandle).then(function(){
-      return getMainJoineryScheduleEventsRootDir(projectHandle, false).then(function(rootH){
-        var keys = [];
-        var iter = rootH.values();
-        function step(){
-          return iter.next().then(function(res){
-            if (res.done) return keys;
-            if (res.value && res.value.kind === "directory") keys.push(res.value.name);
-            return step();
-          });
-        }
-        return step();
-      }, function(){ return null; });
-    }).then(function(keys){
-      if (keys === null) return readLegacyMainJoinerySchedule(projectHandle);
-      return Promise.all(keys.map(function(key){
-        return listMainJoineryScheduleEventsForItem(projectHandle, key).then(foldMainJoinerySchedule);
-      })).then(function(list){ return list.filter(Boolean); });
+      return getMainJoineryScheduleEventsRootDir(projectHandle, false).then(null, function(err){
+        if (isNotFoundErr(err)) return null;
+        forgetProjectDir(projectHandle, [projectSavesDirName()]);
+        return Promise.reject(readFailedErr("Joinery Schedule folder", err));
+      });
+    }).then(function(rootH){
+      if (rootH === null) return readLegacyMainJoinerySchedule(projectHandle);
+      return readFoldedEventBranch(projectHandle, rootH, mainJoineryScheduleEventsBranchName(), foldMainJoinerySchedule);
+    });
+  }
+  // STRICT single-item read (2026-09-25, sweep -- v6) of the MAIN Scheduler's
+  // current record for one item, for the Set Schedule dialog's one-time
+  // prefill. Two reasons it's its own function: (speed) openScheduleModal
+  // used to fold EVERY item's main-schedule events in the whole project
+  // just to prefill one date -- now it's one folder lookup and that item's
+  // own few files; (truth) a soft fold with the newest event file mid-sync
+  // would silently offer the PREVIOUS date -- one the site manager has
+  // since changed in the main Scheduler -- and a Save here would freeze it
+  // into this app's own independent record. So every event file must read
+  // cleanly (one retry each) or this rejects read_failed; the dialog then
+  // opens WITHOUT the prefill and says why (the main schedule is only a
+  // convenience starting point here, never a hard dependency -- see the
+  // top-of-file comment). null when the item genuinely has no record.
+  function readMainScheduleRecordForItem(projectHandle, level, room, joineryId){
+    var key = joineryItemPageKey(level, room, joineryId);
+    return migrateLegacyMainJoineryScheduleIfNeeded(projectHandle).then(function(){
+      return getMainJoineryScheduleEventsRootDir(projectHandle, false).then(null, function(err){
+        if (isNotFoundErr(err)) return null;
+        return Promise.reject(readFailedErr("Joinery Schedule folder", err));
+      });
+    }).then(function(rootH){
+      if (rootH === null){
+        // No events folder at all and (per the migration check just run) no
+        // legacy file either -- or a legacy file that read as genuinely
+        // absent. Nothing to prefill from.
+        return readLegacyMainJoinerySchedule(projectHandle).then(function(list){
+          return findScheduleRecord(list, level, room, joineryId);
+        });
+      }
+      return rootH.getDirectoryHandle(key, { create: false }).then(function(dirH){
+        return listJsonFileHandlesIn(dirH).then(function(handles){
+          return Promise.all(handles.map(readJsonFileHandleStrict));
+        }).then(foldMainJoinerySchedule);
+      }, function(err){
+        if (isNotFoundErr(err)) return null;
+        return Promise.reject(readFailedErr("main schedule folder for " + key, err));
+      });
     });
   }
 
@@ -1826,33 +2470,13 @@
      convention. Migration is included here too, defensively, since this
      app already treats every read of this file as best-effort/optional. */
   function machiningFlagsBranchName(){ return "Machining Flags"; }
+  // Memoised per project (getCachedDir) -- see getJoineryStatusEventsRootDir.
   function getMachiningFlagsEventsRootDir(projectHandle, create){
-    return projectHandle.getDirectoryHandle(projectSavesDirName(), { create: !!create }).then(function(psH){
-      return psH.getDirectoryHandle(machiningFlagsBranchName(), { create: !!create });
-    });
+    return projectDir(projectHandle, [projectSavesDirName(), machiningFlagsBranchName()], !!create);
   }
   function getMachiningFlagsItemDir(projectHandle, key, create){
     return getMachiningFlagsEventsRootDir(projectHandle, create).then(function(rootH){
       return rootH.getDirectoryHandle(key, { create: !!create });
-    });
-  }
-  function listMachiningFlagsEventsForItem(projectHandle, key){
-    return getMachiningFlagsItemDir(projectHandle, key, false).then(function(dirH){
-      if (!dirH || typeof dirH.values !== "function") return [];
-      var handles = [];
-      var iter = dirH.values();
-      function step(){
-        return iter.next().then(function(res){
-          if (res.done) return handles;
-          if (res.value && res.value.kind === "file" && /\.json$/i.test(res.value.name)) handles.push(res.value);
-          return step();
-        });
-      }
-      return step();
-    }, function(){ return []; }).then(function(handles){
-      return Promise.all(handles.map(readJsonFileHandle));
-    }).then(function(events){
-      return events.filter(function(e){ return e && typeof e === "object"; });
     });
   }
   function foldMachiningFlags(events){
@@ -1872,21 +2496,29 @@
     });
     return hasAnyNonPending ? rec : null;
   }
+  // [] only when the legacy file genuinely isn't there; read_failed for one
+  // that exists but won't read -- see migrateLegacyMachiningFlagsIfNeeded.
   function readLegacyMachiningFlagsFile(projectHandle){
-    return projectHandle.getFileHandle(machiningFlagsFilename(), { create: false }).then(function(fh){
-      return fh.getFile();
-    }).then(function(file){
-      return file.text();
-    }).then(function(text){
-      try{ var arr = JSON.parse(text); return Array.isArray(arr) ? arr : []; }catch(e){ return []; }
-    }, function(){ return []; });
+    return readJsonArrayFileStrict(projectHandle, machiningFlagsFilename(), machiningFlagsFilename());
   }
+  // Same reordering as migrateLegacyJoineryStatusIfNeeded (2026-09-25,
+  // sweep -- v6): read the legacy file FIRST, strictly; only then create the
+  // events folder. This app only DISPLAYS Machine Schedule's cut state, but
+  // it still performs Machine Schedule's own migration when it happens to
+  // be the first app to open a project -- and a machining-flags.json that
+  // was mid-sync must not become an empty "Machining Flags" folder that
+  // Machine Schedule then trusts forever (every machinist's recorded cut
+  // gone from ITS point of view). Memoised per project per session.
   function migrateLegacyMachiningFlagsIfNeeded(projectHandle){
+    var memoKey = (projectHandle && projectHandle.name || "") + "\u0000machining";
+    if (migratedThisSession[memoKey]) return Promise.resolve(false);
     return getMachiningFlagsEventsRootDir(projectHandle, false).then(function(){
+      migratedThisSession[memoKey] = true;
       return false;
-    }, function(){
-      return getMachiningFlagsEventsRootDir(projectHandle, true).then(function(){
-        return readLegacyMachiningFlagsFile(projectHandle);
+    }, function(err){
+      if (!isNotFoundErr(err)) return Promise.reject(readFailedErr("Machining Flags folder", err)); // can't tell -> don't migrate
+      return readLegacyMachiningFlagsFile(projectHandle).then(function(list){
+        return getMachiningFlagsEventsRootDir(projectHandle, true).then(function(){ return list; });
       }).then(function(list){
         var writes = [];
         list.forEach(function(rec){
@@ -1907,29 +2539,35 @@
           });
         });
         return Promise.all(writes);
-      }).then(function(){ return true; }).catch(function(){ return false; });
+      }).then(function(){ migratedThisSession[memoKey] = true; return true; }).catch(function(err){
+        if (isReadFailed(err)) return Promise.reject(err); // legacy file exists but couldn't be read: nothing created, surface it
+        return false;
+      });
     });
   }
+  // Best-effort DISPLAY read (the optional "SS cut (Machine Sched.)"
+  // column): the per-item fold stays soft (readFoldedEventBranch, see
+  // readJsonFileHandle's comment) and any failure here -- including a
+  // legacy file that couldn't be read, which correctly refused to migrate
+  // above -- resolves [] so the tables still render with an em dash in that
+  // column; the loaders never fail a whole project over this column. The
+  // "unreadable is not empty" rule is fully honoured where it matters
+  // (nothing is created or written from a failed read), and a soft display
+  // of "—" for a moment is the documented v1 contract of this column.
   function readMachiningFlags(projectHandle){
     if (!projectHandle) return Promise.resolve([]);
     return migrateLegacyMachiningFlagsIfNeeded(projectHandle).then(function(){
-      return getMachiningFlagsEventsRootDir(projectHandle, false).then(function(rootH){
-        var keys = [];
-        var iter = rootH.values();
-        function step(){
-          return iter.next().then(function(res){
-            if (res.done) return keys;
-            if (res.value && res.value.kind === "directory") keys.push(res.value.name);
-            return step();
-          });
-        }
-        return step();
-      }, function(){ return null; });
-    }).then(function(keys){
-      if (keys === null) return readLegacyMachiningFlagsFile(projectHandle);
-      return Promise.all(keys.map(function(key){
-        return listMachiningFlagsEventsForItem(projectHandle, key).then(foldMachiningFlags);
-      })).then(function(list){ return list.filter(Boolean); });
+      return getMachiningFlagsEventsRootDir(projectHandle, false).then(null, function(err){
+        if (isNotFoundErr(err)) return null;
+        forgetProjectDir(projectHandle, [projectSavesDirName()]);
+        return Promise.reject(readFailedErr("Machining Flags folder", err));
+      });
+    }).then(function(rootH){
+      if (rootH === null) return readLegacyMachiningFlagsFile(projectHandle);
+      return readFoldedEventBranch(projectHandle, rootH, machiningFlagsBranchName(), foldMachiningFlags);
+    }).catch(function(err){
+      console.warn("machining-flags read failed (display column left blank):", err);
+      return [];
     });
   }
   function findMachiningFlagRecord(list, level, room, joineryId){
@@ -2232,8 +2870,22 @@
 
   function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
 
+  // (2026-09-25, sweep -- v6) Coalesced to one attribute write per animation
+  // frame: a finger drag or pinch delivers pointermove events far faster
+  // than the screen can paint, and each one used to touch the DOM
+  // synchronously. The transform the frame paints is always the LATEST
+  // planView, so nothing is lost. planApplyTransformNow is the synchronous
+  // write for a caller that reads the attribute straight back (the tests'
+  // setPlanView hook).
+  var planCanvasWorldG = document.getElementById("planCanvasWorld");
+  var planTransformRaf = 0;
+  function planApplyTransformNow(){
+    planTransformRaf = 0;
+    planCanvasWorldG.setAttribute("transform", "translate(" + planView.tx + " " + planView.ty + ") scale(" + planView.scale + ")");
+  }
   function planApplyTransform(){
-    document.getElementById("planCanvasWorld").setAttribute("transform", "translate(" + planView.tx + " " + planView.ty + ") scale(" + planView.scale + ")");
+    if (planTransformRaf) return;
+    planTransformRaf = requestAnimationFrame(planApplyTransformNow);
   }
   function planFitToView(){
     var w = planCanvasStageWrap.clientWidth, h = planCanvasStageWrap.clientHeight;
@@ -2461,8 +3113,16 @@
   planZoomOutBtn.addEventListener("click", function(){ planZoomByButton(0.8); });
   planZoomResetBtn.addEventListener("click", function(){ planFitToView(); });
 
+  // (2026-09-25, sweep -- v6) The project's joinery-items.json is read ONCE
+  // per plan open (openPlanCanvasForLevel already reads it to tag the
+  // markers in/out of scope -- that same read is kept and reused here) and
+  // every marker tap on that plan reuses it -- it used to be re-read from
+  // the folder on every single tap, which on Android is a visible pause
+  // between the tap and the dialog.
+  var planItemsP = null;
   function planFindItemForMarker(hit){
-    return readJoineryItems(planActiveProjectHandle).then(function(items){
+    if (!planItemsP) planItemsP = readJoineryItems(planActiveProjectHandle);
+    return planItemsP.then(function(items){
       return items.filter(function(it){
         return it.level === planActiveLevelName && it.room === (hit.roomName || "") && it.joineryId === (hit.joineryCode || "");
       })[0] || null;
@@ -2496,14 +3156,19 @@
         showToast((hit.roomName || "") + (hit.joineryCode ? " · " + hit.joineryCode : "") + " — not flagged for Solid Surface; nothing to schedule here.");
         return;
       }
-      openScheduleModal(planActiveProjectHandle, planActiveProjectName, item, function(){
-        // Re-render the plan markers (no visual change needed today, but
-        // keeps this hook ready) and, more importantly, whichever table
-        // screen we came from, so it reflects the just-saved schedule the
-        // moment the visitor navigates back.
-        if (planReturnScreen === "overall") loadOverallSchedule();
-        else if (planReturnScreen === "projectSchedule") loadProjectSchedule(planActiveProjectHandle, planActiveProjectName);
-      });
+      // The just-saved record is applied to whichever table screen we came
+      // from IN PLACE (applyScheduleChangeToRows, via the Save/Clear
+      // handlers) -- no folder re-read; the table already reflects it the
+      // moment the visitor navigates back. (2026-09-25, sweep -- v6: this
+      // used to re-read the whole project, or from the Overall Schedule's
+      // plan EVERY project, after every Save.)
+      return openScheduleModal(planActiveProjectHandle, planActiveProjectName, item, null);
+    }).catch(function(err){
+      // (2026-09-25, sweep -- v6) Used to be an unhandled rejection with no
+      // feedback when joinery-items.json couldn't be read.
+      console.error("Opening the Set Schedule dialog from the plan failed:", err);
+      planItemsP = null; // so the next tap re-reads rather than reusing a failed read
+      showToast(isReadFailed(err) ? "Couldn't read this project's items (still syncing?) — try again." : "Couldn't open the schedule dialog — try again.");
     });
   }
 
@@ -2514,9 +3179,12 @@
     planReturnScreen = returnScreen || "home";
     planCanvasTitle.textContent = projectName + " — " + levelName;
     planCanvasScreen.hidden = false;
+    hideStatusHistoryPop();
+    navRecord("planCanvas"); // device Back button (2026-09-25, sweep -- v6) -- see navRecord
+    planItemsP = readJoineryItems(projectHandle); // once per plan open, reused by every marker tap -- see planFindItemForMarker
     return Promise.all([
       readLevelFile(projectHandle, projectName, levelName),
-      readJoineryItems(projectHandle)
+      planItemsP
     ]).then(function(res){
       var level = res[0];
       var items = res[1];
@@ -2563,15 +3231,28 @@
       }
     }).catch(function(err){
       console.error("Opening level plan failed:", err);
-      showToast("Couldn't open this level's plan.");
+      planItemsP = null;
+      // "Unreadable is not empty" (2026-09-25, sweep -- v6): a level file (or
+      // the items file) that exists but couldn't be read (mid-sync) says so,
+      // instead of the old "No saved plan found" for a plan that's there.
+      showToast(isReadFailed(err) ? "Couldn't read this level's plan or the project's items (still syncing?) — try again." : "Couldn't open this level's plan.");
     });
   }
-  backFromPlanCanvasBtn.addEventListener("click", function(){
+  function closePlanCanvas(){
     planCanvasScreen.hidden = true;
     planSaved = null;
+    planItemsP = null;
     if (planReturnScreen === "overall") showScreen("overall");
     else if (planReturnScreen === "projectSchedule") showScreen("projectSchedule");
     else showScreen("home");
+  }
+  backFromPlanCanvasBtn.addEventListener("click", closePlanCanvas);
+  // (2026-09-25, sweep -- v6) Android: while the plan is open, a long press
+  // anywhere on it (this app's own schedule gesture) must never pop the
+  // browser's image/text context sheet -- the SVG's own contextmenu handler
+  // above already covers the drawing, this covers the rest of the screen.
+  document.addEventListener("contextmenu", function(e){
+    if (!planCanvasScreen.hidden) e.preventDefault();
   });
 
   /* ============================== Set Schedule modal ============================== */
@@ -2601,6 +3282,20 @@
   schedDeliveryInput.addEventListener("input", updateComputedStartPreview);
   schedLeadTimeInput.addEventListener("input", updateComputedStartPreview);
 
+  // (2026-09-25, sweep -- v6; behaviour updated 2026-09-26, v7) The
+  // dialog's own-record read (readJoinerySchedule -- see its comment) is a
+  // soft fold of this app's own event branch now that Save/Clear write one
+  // event file each rather than rewriting the whole list -- there is no
+  // more read-modify-write for a stale read here to corrupt, so a mid-sync
+  // event file for some OTHER item just can't affect this one. A read_failed
+  // can still surface (the events branch folder itself, or the legacy
+  // whole-file migration, unreadable) and still refuses to open the dialog
+  // and says so, same as before. The main-schedule prefill uses the
+  // per-item strict reader (readMainScheduleRecordForItem) and, since the
+  // main schedule is only a convenience starting point here, a failed
+  // prefill read opens the dialog anyway -- empty, with a toast saying the
+  // date couldn't be pulled across right now -- rather than blocking a
+  // schedule the person can type in.
   function openScheduleModal(projectHandle, projectName, item, onSaved){
     return readJoinerySchedule(projectHandle).then(function(list){
       var existingRec = findScheduleRecord(list, item.level, item.room, item.joineryId);
@@ -2613,8 +3308,10 @@
       // DEFAULT_LEAD_TIME_DAYS, never pulled across (see the top-of-file
       // comment for why). Once existingRec exists, this app's own values
       // always win and the main schedule is never consulted again.
-      var mainPrefillPromise = existingRec ? Promise.resolve(null) : readMainJoinerySchedule(projectHandle).then(function(mainList){
-        return findScheduleRecord(mainList, item.level, item.room, item.joineryId);
+      var mainPrefillPromise = existingRec ? Promise.resolve(null) : readMainScheduleRecordForItem(projectHandle, item.level, item.room, item.joineryId).catch(function(err){
+        console.error("Reading the main Scheduler's date for prefill failed:", err);
+        showToast(isReadFailed(err) ? "Couldn't read the main Scheduler's delivery date for this item (still syncing?) — enter the date by hand, or try again in a moment." : "Couldn't read the main Scheduler's delivery date for this item — enter it by hand.", 4500);
+        return null;
       });
       return mainPrefillPromise.then(function(mainRec){
         var prefilledFromMain = !existingRec && !!(mainRec && mainRec.requiredDeliveryDate);
@@ -2626,9 +3323,13 @@
         schedClearBtn.hidden = !existingRec;
         schedDeliveryPrefillNote.hidden = !prefilledFromMain;
         scheduleModalError.hidden = true;
+        schedSaveBtn.disabled = false; schedClearBtn.disabled = false;
         updateComputedStartPreview();
         scheduleModalBackdrop.hidden = false;
       });
+    }, function(err){
+      console.error("Reading this project's Solid Surface schedule failed:", err);
+      showToast(isReadFailed(err) ? "Couldn't read this project's Solid Surface schedule file (still syncing?) — try again before editing it." : "Couldn't open the schedule dialog — try again.");
     });
   }
   function closeScheduleModal(){
@@ -2636,6 +3337,14 @@
     scheduleModalCtx = null;
   }
   schedCancelBtn.addEventListener("click", closeScheduleModal);
+  // Save / Clear: each is now its OWN immutable event file
+  // (writeJoineryScheduleEvent), never a read of the current list first --
+  // see the v7 comment on readJoinerySchedule/writeJoineryScheduleEvent
+  // above. (2026-09-25, sweep -- v6, still true in v7) Both buttons are
+  // disabled while the write is in flight so a double tap can't file two
+  // events, and the saved/cleared record is applied to the table rows IN
+  // PLACE (applyScheduleChangeToRows) instead of re-reading the whole
+  // project -- or, from the Overall Schedule, EVERY project -- afterwards.
   schedSaveBtn.addEventListener("click", function(){
     if (!scheduleModalCtx) return;
     var delivery = schedDeliveryInput.value;
@@ -2648,51 +3357,38 @@
     var lead = leadRaw === "" ? DEFAULT_LEAD_TIME_DAYS : Math.max(0, parseInt(leadRaw, 10) || 0);
     var start = subtractBusinessDays(delivery, lead);
     var ctx = scheduleModalCtx;
-    readJoinerySchedule(ctx.projectHandle).then(function(list){
-      var existing = findScheduleRecord(list, ctx.item.level, ctx.item.room, ctx.item.joineryId);
-      var rec = {
-        level: ctx.item.level,
-        room: ctx.item.room,
-        joineryId: ctx.item.joineryId,
-        requiredDeliveryDate: delivery,
-        manufactureLeadTimeDays: lead,
-        manufactureStartDate: start,
-        updatedAt: new Date().toISOString(),
-        setBy: deviceUserName || "" // read-only attribution (identity feature, 2026-09-23) -- never gates or validates anything
-      };
-      if (existing){
-        list = list.map(function(r){ return r === existing ? rec : r; });
-      } else {
-        list.push(rec);
-      }
-      return writeJoinerySchedule(ctx.projectHandle, list);
-    }).then(function(){
+    var fields = {
+      requiredDeliveryDate: delivery,
+      manufactureLeadTimeDays: lead,
+      manufactureStartDate: start
+    };
+    var updatedBy = deviceUserName || ""; // read-only attribution (identity feature, 2026-09-23) -- never gates or validates anything
+    schedSaveBtn.disabled = true; schedClearBtn.disabled = true;
+    writeJoineryScheduleEvent(ctx.projectHandle, ctx.item.level, ctx.item.room, ctx.item.joineryId, "set", fields, updatedBy).then(function(rec){
       showToast("Schedule saved.");
       closeScheduleModal();
-      if (typeof ctx.onSaved === "function") ctx.onSaved();
+      applyScheduleChangeToRows(ctx.projectName, ctx.item, rec);
+      if (typeof ctx.onSaved === "function") ctx.onSaved(rec);
     }).catch(function(err){
       console.error("Saving schedule failed:", err);
       scheduleModalError.hidden = false;
-      scheduleModalError.textContent = "Couldn't save this schedule -- try again.";
-    });
+      scheduleModalError.textContent = isReadFailed(err) ? "Couldn't save: this project's Solid Surface schedule file couldn't be read (still syncing?) -- nothing was changed. Try again in a moment." : "Couldn't save this schedule -- try again.";
+    }).then(function(){ schedSaveBtn.disabled = false; schedClearBtn.disabled = false; });
   });
   schedClearBtn.addEventListener("click", function(){
     if (!scheduleModalCtx) return;
     var ctx = scheduleModalCtx;
-    readJoinerySchedule(ctx.projectHandle).then(function(list){
-      var next = list.filter(function(r){
-        return !(r && r.level === ctx.item.level && (r.room || "") === (ctx.item.room || "") && (r.joineryId || "") === (ctx.item.joineryId || ""));
-      });
-      return writeJoinerySchedule(ctx.projectHandle, next);
-    }).then(function(){
+    schedSaveBtn.disabled = true; schedClearBtn.disabled = true;
+    writeJoineryScheduleEvent(ctx.projectHandle, ctx.item.level, ctx.item.room, ctx.item.joineryId, "clear", {}, deviceUserName || "").then(function(){
       showToast("Schedule cleared.");
       closeScheduleModal();
-      if (typeof ctx.onSaved === "function") ctx.onSaved();
+      applyScheduleChangeToRows(ctx.projectName, ctx.item, null);
+      if (typeof ctx.onSaved === "function") ctx.onSaved(null);
     }).catch(function(err){
       console.error("Clearing schedule failed:", err);
       scheduleModalError.hidden = false;
-      scheduleModalError.textContent = "Couldn't clear this schedule -- try again.";
-    });
+      scheduleModalError.textContent = isReadFailed(err) ? "Couldn't clear: this project's Solid Surface schedule file couldn't be read (still syncing?) -- nothing was changed. Try again in a moment." : "Couldn't clear this schedule -- try again.";
+    }).then(function(){ schedSaveBtn.disabled = false; schedClearBtn.disabled = false; });
   });
 
   /* ============================== generic new-name prompt (identity only) ==============================
@@ -2755,12 +3451,12 @@
       numberpadDotsEl.appendChild(dot);
     }
   }
-  function numberpadShakeAndClear(){
+  function numberpadShakeAndClear(message){
     var box = numberpadBackdrop.querySelector(".modal");
     box.classList.remove("numberpad-shake");
     void box.offsetWidth; // restart the CSS animation
     box.classList.add("numberpad-shake");
-    showToast("Incorrect PIN — try again.");
+    showToast(message || "Incorrect PIN — try again.");
     setTimeout(function(){
       if (numberpadState){ numberpadState.entered = ""; numberpadState.busy = false; renderNumberpadDots(); }
     }, 260);
@@ -2789,8 +3485,10 @@
         if (!numberpadState) return; // cancelled while verifying
         if (ok) finishNumberpad(pin);
         else numberpadShakeAndClear();
-      }, function(){
-        if (numberpadState) numberpadShakeAndClear();
+      }, function(err){
+        // (2026-09-25, sweep -- v6) A verify that couldn't READ the registry
+        // is not a wrong PIN -- say what actually happened.
+        if (numberpadState) numberpadShakeAndClear(isReadFailed(err) ? "Couldn't read utzline-users.csv (still syncing?) — try again." : undefined);
       });
     }
   }
@@ -2977,8 +3675,12 @@
         });
       });
     }).catch(function(err){
+      // (2026-09-25, sweep -- v6) readUsersCsv now REJECTS when the registry
+      // exists but can't be read (mid-sync) instead of reading as empty --
+      // so this flow never gets as far as writeUsersCsv with a list that's
+      // missing everyone else's row. Say so plainly; nothing was written.
       console.error("Adding a new name/PIN failed:", err);
-      showToast("Couldn't save that to utzline-users.csv.");
+      showToast(isReadFailed(err) ? "Couldn't read utzline-users.csv (still syncing?) — nothing was changed. Try again in a moment." : "Couldn't save that to utzline-users.csv.");
       revertIdentitySelector(previousValue);
     });
   }
@@ -3048,6 +3750,58 @@
       };
     });
   }
+  /* ---- Snapshot (de)hydration + lazy project handles (2026-09-25, sweep -- v6) ----
+     A row is stored in the device-local snapshot WITHOUT its
+     projectHandle (a directory handle is the one non-plain thing on it),
+     and on paint gets it back lazily the moment an action needs it --
+     ensureRowProjectHandle, one memoised named lookup per project. The
+     Delay pill is recomputed on paint from the row's own dates against
+     TODAY (computeDelayInfo is pure and cheap), so a snapshot saved
+     yesterday never shows yesterday's "On track" for an item that's
+     overdue this morning. */
+  function rowToSnapshot(row){
+    var o = {};
+    Object.keys(row).forEach(function(k){ if (k !== "projectHandle") o[k] = row[k]; });
+    return o;
+  }
+  function rowFromSnapshot(o, today){
+    var r = Object.assign({}, o);
+    r.projectHandle = null;
+    var sched = r.requiredDeliveryDate ? { requiredDeliveryDate: r.requiredDeliveryDate, manufactureStartDate: r.manufactureStartDate || "" } : null;
+    var d = computeDelayInfo(sched, r.statusKey, today, r.actualDeliveredAt);
+    r.delayKey = d.key; r.delayLabel = d.label; r.delaySeverity = d.severity;
+    return r;
+  }
+  function rowsFromSnapshot(list){
+    var today = todayDateStr();
+    return (Array.isArray(list) ? list : []).map(function(o){ return rowFromSnapshot(o, today); });
+  }
+  function ensureRowProjectHandle(row){
+    if (row.projectHandle) return Promise.resolve(row.projectHandle);
+    return getProjectHandleByName(row.project).then(function(h){ row.projectHandle = h; return h; });
+  }
+  // After a Save/Clear the record is known exactly (it is what was just
+  // written into solid-surface-schedule.json) -- update the matching row in
+  // whichever tables hold it, repaint, and re-save their snapshots. Zero
+  // folder reads, where a Save used to re-read the whole project (or, from
+  // the Overall Schedule's plan, EVERY project) before the table caught up.
+  function applyScheduleChangeToRows(projectName, item, rec){
+    var today = todayDateStr();
+    function patch(row){
+      if (row.project !== projectName || row.level !== item.level || (row.room || "") !== (item.room || "") || (row.joineryId || "") !== (item.joineryId || "")) return false;
+      row.requiredDeliveryDate = rec ? rec.requiredDeliveryDate : "";
+      row.manufactureLeadTimeDays = rec ? rec.manufactureLeadTimeDays : null;
+      row.manufactureStartDate = rec ? rec.manufactureStartDate : "";
+      var d = computeDelayInfo(rec, row.statusKey, today, row.actualDeliveredAt);
+      row.delayKey = d.key; row.delayLabel = d.label; row.delaySeverity = d.severity;
+      return true;
+    }
+    var touchedOverall = false, touchedProj = false;
+    overallAllRows.forEach(function(row){ if (patch(row)) touchedOverall = true; });
+    projAllRows.forEach(function(row){ if (patch(row)) touchedProj = true; });
+    if (touchedOverall){ renderOverallTable(); snapSet("overall", null, { projects: overallProjectNames, rows: overallAllRows.map(rowToSnapshot) }); }
+    if (touchedProj){ renderProjTable(); snapSet("project", activeProjectName, { rows: projAllRows.map(rowToSnapshot), planLevels: projPlanLevels }); }
+  }
   function scheduleCompare(a, b, sort){
     var col = sort.col;
     var cmp;
@@ -3101,18 +3855,30 @@
     var jobNoteBtn = tr.querySelector(".jobnote-btn");
     var viewBtn = tr.querySelector(".view-plan-btn");
     var editBtn = tr.querySelector(".edit-sched-btn");
+    // (2026-09-25, sweep -- v6) Every action first makes sure the row has its
+    // project directory handle (instant, unless this row was painted from a
+    // snapshot -- then one memoised lookup, see ensureRowProjectHandle), and
+    // a failure reports instead of rejecting silently (it used to be an
+    // unhandled rejection when a folder lookup or the dialog's read failed).
+    function withHandle(fn){
+      return ensureRowProjectHandle(row).then(fn).catch(function(err){
+        console.error("Row action failed:", err);
+        showToast("Couldn't open that project's folder — tap Refresh and try again.");
+      });
+    }
     if (jobNoteBtn){
       jobNoteBtn.addEventListener("click", function(){
-        openJobNoteDialogForRow(row);
+        withHandle(function(){ openJobNoteDialogForRow(row); });
       });
     }
     viewBtn.addEventListener("click", function(){
-      openPlanCanvasForLevel(row.projectHandle, row.project, row.level, returnScreen);
+      withHandle(function(h){ return openPlanCanvasForLevel(h, row.project, row.level, returnScreen); });
     });
     editBtn.addEventListener("click", function(){
-      openScheduleModal(row.projectHandle, row.project, row.rawItem, function(){
-        if (returnScreen === "overall") loadOverallSchedule(); else loadProjectSchedule(row.projectHandle, row.project);
-      });
+      // The saved/cleared record is applied to the table rows in place by
+      // the Save/Clear handlers (applyScheduleChangeToRows) -- no
+      // whole-project re-read here any more (2026-09-25, sweep -- v6).
+      withHandle(function(h){ return openScheduleModal(h, row.project, row.rawItem, null); });
     });
     // Status-history hover/tap popup (2026-09-23) -- see showStatusHistoryPop
     // above. Hover opens/closes it on desktop; a plain click/tap toggles it,
@@ -3188,7 +3954,46 @@
   var overallDelayFilter = document.getElementById("overallDelayFilter");
   var overallSearchInput = document.getElementById("overallSearchInput");
   var overallAllRows = [];
+  var overallProjectNames = []; // every project under the root as of the last successful read (the project filter's options; saved with the snapshot)
   var overallSort = { col: "requiredDeliveryDate", dir: "asc" };
+
+  /* ---- "Hide delivered" / "Hide installed" tick boxes (2026-09-26) ----
+     Andrew, mid-sweep, verbatim: "add in tick boxes for filtering out
+     installed and delivered items." One pair per table (Overall Solid
+     Surface Schedule, per-project Schedule). Both apply here: this app's
+     rows carry the SHARED status pipeline, and a Solid Surface item reaches
+     "delivered" (Delivery ITP) and "installed" (Install ITP) like any other
+     -- the Delay column's own Delivered early/late/on-time outcome depends
+     on it. Ticked = rows whose CURRENT folded status is exactly that stage
+     are left out ("installed" outranks "delivered" in the pipeline, so each
+     box hides only its own stage; both ticked hides both). Default unticked;
+     each box is remembered per device in localStorage under its own key
+     (one per app + table + box) so the choice sticks between visits
+     (best-effort -- a blocked/cleared storage just means unticked). Pure
+     in-memory filtering on the rows already loaded -- never a re-read --
+     with the search box and the other dropdowns applying on top, and the
+     "Showing N of M items" count under the filters following what's
+     actually visible. */
+  function hideStatusCheckbox(id, storageKey){
+    var el = document.getElementById(id);
+    try{ el.checked = localStorage.getItem(storageKey) === "1"; }catch(e){ el.checked = false; }
+    el.addEventListener("change", function(){
+      try{ localStorage.setItem(storageKey, el.checked ? "1" : "0"); }catch(e){}
+    });
+    return el;
+  }
+  function hiddenByStatusTicks(hideDeliveredEl, hideInstalledEl, statusKey){
+    if (hideDeliveredEl.checked && statusKey === "delivered") return true;
+    if (hideInstalledEl.checked && statusKey === "installed") return true;
+    return false;
+  }
+  function renderTableCount(noteEl, shown, total){
+    noteEl.hidden = total === 0;
+    noteEl.textContent = shown === total ? (total + (total === 1 ? " item" : " items")) : ("Showing " + shown + " of " + total + " items");
+  }
+  var overallHideDelivered = hideStatusCheckbox("overallHideDelivered", "utzline-solid-surface-schedule:overall:hideDelivered");
+  var overallHideInstalled = hideStatusCheckbox("overallHideInstalled", "utzline-solid-surface-schedule:overall:hideInstalled");
+  var overallCountNote = document.getElementById("overallCountNote");
 
   function statusFilterMatches(filterValue, statusKey){
     if (filterValue === "") return true; // "All statuses"
@@ -3196,6 +4001,7 @@
     return statusKey === filterValue;
   }
   function overallMatchesFilters(row){
+    if (hiddenByStatusTicks(overallHideDelivered, overallHideInstalled, row.statusKey)) return false;
     if (overallProjectFilter.value && row.project !== overallProjectFilter.value) return false;
     if (!statusFilterMatches(overallStatusFilter.value, row.statusKey)) return false;
     if (overallDelayFilter.value && row.delayKey !== overallDelayFilter.value) return false;
@@ -3206,7 +4012,15 @@
     }
     return true;
   }
+  // (2026-09-25, sweep -- v6) A search box re-rendered the whole table on
+  // every keystroke -- hundreds of rows rebuilt per character on the Overall
+  // Schedule. Coalesced to one render shortly after typing pauses.
+  function debounce(fn, ms){
+    var t = 0;
+    return function(){ clearTimeout(t); t = setTimeout(fn, ms); };
+  }
   function renderOverallTable(){
+    hideStatusHistoryPop(); // the cell it was anchored to is about to be rebuilt (sweep -- v6: it used to be left floating)
     var filtered = overallAllRows.filter(overallMatchesFilters);
     filtered.sort(function(a, b){ return scheduleCompare(a, b, overallSort); });
     overallTableBody.innerHTML = "";
@@ -3218,6 +4032,7 @@
     });
     overallEmptyAll.hidden = overallAllRows.length !== 0;
     overallEmpty.hidden = !(overallAllRows.length > 0 && filtered.length === 0);
+    renderTableCount(overallCountNote, filtered.length, overallAllRows.length);
     overallTable.hidden = overallAllRows.length === 0;
     Array.prototype.forEach.call(overallTable.querySelectorAll("th"), function(th){
       th.classList.remove("sorted", "desc");
@@ -3236,46 +4051,104 @@
       renderOverallTable();
     });
   });
-  [overallProjectFilter, overallStatusFilter, overallDelayFilter].forEach(function(el){ el.addEventListener("change", renderOverallTable); });
-  overallSearchInput.addEventListener("input", renderOverallTable);
-  document.getElementById("refreshOverallBtn").addEventListener("click", loadOverallSchedule);
+  [overallProjectFilter, overallStatusFilter, overallDelayFilter, overallHideDelivered, overallHideInstalled].forEach(function(el){ el.addEventListener("change", renderOverallTable); });
+  overallSearchInput.addEventListener("input", debounce(renderOverallTable, 100));
+  document.getElementById("refreshOverallBtn").addEventListener("click", function(){ loadOverallSchedule(); });
 
-  // Reads EVERY project under the chosen root, sequentially -- a simple,
-  // known-scalable-enough-for-V1 design given how this family already
-  // reads its data (no project count in this ecosystem has ever needed
-  // more than that so far).
+  var overallRefreshNote = document.getElementById("overallRefreshNote");
+  var overallLoadSeq = 0;
+  // (2026-09-25, sweep -- v6) The project filter's options were rebuilt with
+  // innerHTML on every load, which also reset the person's chosen project
+  // back to "All projects" on every Refresh. Keep the selection if that
+  // project is still there.
+  function setOverallProjectFilterOptions(names){
+    overallProjectNames = names.slice();
+    var keep = overallProjectFilter.value;
+    overallProjectFilter.innerHTML = "<option value=\"\">All projects</option>" + names.map(function(n){ return "<option value=\"" + escapeHtml(n) + "\">" + escapeHtml(n) + "</option>"; }).join("");
+    if (keep && names.indexOf(keep) !== -1) overallProjectFilter.value = keep;
+  }
+  // Reads EVERY project under the chosen root. (2026-09-25, sweep -- v6, speed)
+  //   - Paints the last-known rows from the device-local snapshot FIRST
+  //     (instantly, with a "refreshing…" note) whenever there is one, so
+  //     the person is never staring at "Reading every project..." for
+  //     something they saw a minute ago; the loading card only shows on a
+  //     genuinely first visit.
+  //   - Projects are read in PARALLEL (Promise.all) instead of one after
+  //     another (the old sequential reduce chain); each project's own four
+  //     reads were already parallel. The project handle comes from the
+  //     memoised getProjectHandleByName, not a fresh named lookup.
+  //   - Per-project failures are no longer silently swallowed: a project
+  //     that couldn't be read keeps its last-known rows (if any) and is
+  //     NAMED in a toast, so "unreadable" never quietly reads as "no Solid
+  //     Surface items" ("unreadable is not empty").
+  //   - A stale response (the person hit Refresh again, or left and came
+  //     back, before the previous read finished) is dropped via overallLoadSeq.
   function loadOverallSchedule(){
-    overallTableCard.hidden = true;
-    overallLoadingCard.hidden = false;
-    return listExistingProjects(projectsRootHandle).then(function(names){
-      overallProjectFilter.innerHTML = "<option value=\"\">All projects</option>" + names.map(function(n){ return "<option value=\"" + escapeHtml(n) + "\">" + escapeHtml(n) + "</option>"; }).join("");
-      return names.reduce(function(chain, name){
-        return chain.then(function(acc){
-          return projectsRootHandle.getDirectoryHandle(name, { create: false }).then(function(projectHandle){
-            return Promise.all([
-              readJoineryItems(projectHandle),
-              readJoineryStatuses(projectHandle),
-              readJoinerySchedule(projectHandle),
-              readMachiningFlags(projectHandle)
-            ]).then(function(res){
-              // Solid Surface scoping (see filterSolidSurfaceItems/the
-              // top-of-file comment): only items with hasSolidSurface===true
-              // are ever built into a row here.
-              var rows = buildEnrichedRows(filterSolidSurfaceItems(res[0]), res[1], res[2], name, projectHandle, res[3]);
-              return acc.concat(rows);
-            });
-          }).catch(function(){ return acc; });
-        });
-      }, Promise.resolve([]));
-    }).then(function(rows){
-      overallAllRows = rows;
+    var seq = ++overallLoadSeq;
+    var painted = overallAllRows.length > 0;
+    if (!painted){
+      overallTableCard.hidden = true;
+      overallLoadingCard.hidden = false;
+    }
+    overallRefreshNote.hidden = !painted;
+    var snapP = painted ? Promise.resolve(null) : snapGet("overall", null).then(function(snap){
+      if (seq !== overallLoadSeq || !snap || !Array.isArray(snap.rows) || !snap.rows.length) return;
+      overallAllRows = rowsFromSnapshot(snap.rows);
+      setOverallProjectFilterOptions(snap.projects || []);
       overallLoadingCard.hidden = true;
       overallTableCard.hidden = false;
+      overallRefreshNote.hidden = false;
       renderOverallTable();
+    });
+    return snapP.then(function(){
+      return listExistingProjects(projectsRootHandle);
+    }).then(function(names){
+      return Promise.all(names.map(function(name){
+        return getProjectHandleByName(name).then(function(projectHandle){
+          return Promise.all([
+            readJoineryItems(projectHandle),
+            readJoineryStatuses(projectHandle),
+            readJoinerySchedule(projectHandle),
+            readMachiningFlags(projectHandle)
+          ]).then(function(res){
+            // Solid Surface scoping (see filterSolidSurfaceItems/the
+            // top-of-file comment): only items with hasSolidSurface===true
+            // are ever built into a row here.
+            return { name: name, rows: buildEnrichedRows(filterSolidSurfaceItems(res[0]), res[1], res[2], name, projectHandle, res[3]) };
+          });
+        }).catch(function(err){
+          console.error("Reading project \"" + name + "\" for the Overall Solid Surface Schedule failed:", err);
+          return { name: name, failed: true };
+        });
+      })).then(function(results){
+        if (seq !== overallLoadSeq) return; // superseded by a newer load
+        var previous = overallAllRows; // whatever is on screen (snapshot or last read)
+        var rows = [], failed = [];
+        results.forEach(function(r){
+          if (r.failed){
+            failed.push(r.name);
+            previous.forEach(function(row){ if (row.project === r.name) rows.push(row); }); // keep last-known rows for it
+          } else {
+            rows = rows.concat(r.rows);
+          }
+        });
+        overallAllRows = rows;
+        setOverallProjectFilterOptions(names);
+        overallLoadingCard.hidden = true;
+        overallTableCard.hidden = false;
+        overallRefreshNote.hidden = true;
+        renderOverallTable();
+        snapSet("overall", null, { projects: names, rows: rows.map(rowToSnapshot) });
+        if (failed.length){
+          showToast("Couldn't read " + (failed.length === 1 ? "project " : "projects ") + failed.join(", ") + " (still syncing?) — showing last-known rows. Tap Refresh to try again.", 5000);
+        }
+      });
     }).catch(function(err){
+      if (seq !== overallLoadSeq) return;
       console.error("Loading overall schedule failed:", err);
       overallLoadingCard.hidden = true;
       overallTableCard.hidden = false;
+      overallRefreshNote.hidden = true;
       showToast("Couldn't read every project's schedule.");
     });
   }
@@ -3293,11 +4166,18 @@
   var levelPlanSelect = document.getElementById("levelPlanSelect");
   var openLevelPlanBtn = document.getElementById("openLevelPlanBtn");
   var levelPlanRow = document.getElementById("levelPlanRow");
+  var projRefreshNote = document.getElementById("projRefreshNote");
+  var projHideDelivered = hideStatusCheckbox("projHideDelivered", "utzline-solid-surface-schedule:project:hideDelivered");
+  var projHideInstalled = hideStatusCheckbox("projHideInstalled", "utzline-solid-surface-schedule:project:hideInstalled");
+  var projCountNote = document.getElementById("projCountNote");
   var projAllRows = [];
+  var projPlanLevels = [];
   var projSort = { col: "requiredDeliveryDate", dir: "asc" };
   var activeProjectHandle = null, activeProjectName = "";
+  var projLoadSeq = 0;
 
   function projMatchesFilters(row){
+    if (hiddenByStatusTicks(projHideDelivered, projHideInstalled, row.statusKey)) return false;
     if (projLevelFilter.value && row.level !== projLevelFilter.value) return false;
     if (!statusFilterMatches(projStatusFilter.value, row.statusKey)) return false;
     if (projDelayFilter.value && row.delayKey !== projDelayFilter.value) return false;
@@ -3309,6 +4189,8 @@
     return true;
   }
   function renderProjTable(){
+    hideStatusHistoryPop(); // the cell it was anchored to is about to be rebuilt
+    projEmpty.textContent = "No items match these filters."; // loadProjectSchedule borrows this element for its read-failure message
     var filtered = projAllRows.filter(projMatchesFilters);
     filtered.sort(function(a, b){ return scheduleCompare(a, b, projSort); });
     projTableBody.innerHTML = "";
@@ -3320,6 +4202,7 @@
     });
     projEmptyAll.hidden = projAllRows.length !== 0;
     projEmpty.hidden = !(projAllRows.length > 0 && filtered.length === 0);
+    renderTableCount(projCountNote, filtered.length, projAllRows.length);
     projTable.hidden = projAllRows.length === 0;
     Array.prototype.forEach.call(projTable.querySelectorAll("th"), function(th){
       th.classList.remove("sorted", "desc");
@@ -3338,38 +4221,92 @@
       renderProjTable();
     });
   });
-  [projLevelFilter, projStatusFilter, projDelayFilter].forEach(function(el){ el.addEventListener("change", renderProjTable); });
-  projSearchInput.addEventListener("input", renderProjTable);
+  [projLevelFilter, projStatusFilter, projDelayFilter, projHideDelivered, projHideInstalled].forEach(function(el){ el.addEventListener("change", renderProjTable); });
+  projSearchInput.addEventListener("input", debounce(renderProjTable, 100));
+  document.getElementById("refreshProjectBtn").addEventListener("click", function(){
+    if (activeProjectHandle) loadProjectSchedule(activeProjectHandle, activeProjectName);
+  });
   openLevelPlanBtn.addEventListener("click", function(){
     if (!levelPlanSelect.value) { showToast("No levels with a saved plan found for this project yet."); return; }
     openPlanCanvasForLevel(activeProjectHandle, activeProjectName, levelPlanSelect.value, "projectSchedule");
   });
 
+  function applyProjectScheduleState(rows, planLevels){
+    projAllRows = rows;
+    projPlanLevels = planLevels || [];
+    var levelNamesFromItems = Array.from(new Set(rows.map(function(r){ return r.level; }))).sort(function(a, b){ return a.localeCompare(b, undefined, { sensitivity: "base" }); });
+    var keepLevel = projLevelFilter.value;
+    projLevelFilter.innerHTML = "<option value=\"\">All levels</option>" + levelNamesFromItems.map(function(n){ return "<option value=\"" + escapeHtml(n) + "\">" + escapeHtml(n) + "</option>"; }).join("");
+    if (keepLevel && levelNamesFromItems.indexOf(keepLevel) !== -1) projLevelFilter.value = keepLevel;
+    var keepPlan = levelPlanSelect.value;
+    levelPlanSelect.innerHTML = projPlanLevels.map(function(n){ return "<option value=\"" + escapeHtml(n) + "\">" + escapeHtml(n) + "</option>"; }).join("");
+    if (keepPlan && projPlanLevels.indexOf(keepPlan) !== -1) levelPlanSelect.value = keepPlan;
+    levelPlanRow.hidden = projPlanLevels.length === 0;
+    renderProjTable();
+  }
+  // (2026-09-25, sweep -- v6, speed + a stale-state bug) Opening a project
+  // used to leave the PREVIOUS project's rows on screen (and its plan levels
+  // in the picker) until this project's reads finished -- a real "stale
+  // state after navigation" on a slow tablet, where you could tap a row
+  // that belonged to the project you just left. Now: on a project change
+  // the table is cleared at once, this project's last-known snapshot is
+  // painted instantly (rows + plan levels, "refreshing…" note), the folder
+  // is read behind it, and the result repaints and re-saves the snapshot.
+  // A read that fails keeps whatever's painted and says so -- never "No
+  // joinery items in this project yet." for a folder that just couldn't be
+  // read right now. Same superseded-load guard as the Overall Schedule.
   function loadProjectSchedule(projectHandle, projectName){
+    var seq = ++projLoadSeq;
+    var changed = projectName !== activeProjectName;
     activeProjectHandle = projectHandle;
     activeProjectName = projectName;
     projectScheduleTitle.textContent = projectName;
-    return Promise.all([
-      readJoineryItems(projectHandle),
-      readJoineryStatuses(projectHandle),
-      readJoinerySchedule(projectHandle),
-      listExistingLevels(projectHandle),
-      readMachiningFlags(projectHandle)
-    ]).then(function(res){
+    if (changed){
+      projAllRows = []; projPlanLevels = [];
+      projTableBody.innerHTML = "";
+      projEmpty.hidden = true; projEmptyAll.hidden = true; projCountNote.hidden = true;
+      levelPlanRow.hidden = true;
+      projLevelFilter.value = ""; levelPlanSelect.innerHTML = "";
+    }
+    var painted = projAllRows.length > 0;
+    projRefreshNote.textContent = painted ? "Showing last-known schedule — refreshing from the folder…" : "Reading this project…";
+    projRefreshNote.hidden = false;
+    var snapP = painted ? Promise.resolve() : snapGet("project", projectName).then(function(snap){
+      if (seq !== projLoadSeq || !snap || !Array.isArray(snap.rows) || !snap.rows.length) return;
+      applyProjectScheduleState(rowsFromSnapshot(snap.rows), snap.planLevels || []);
+      projRefreshNote.textContent = "Showing last-known schedule — refreshing from the folder…";
+    });
+    return snapP.then(function(){
+      return Promise.all([
+        readJoineryItems(projectHandle),
+        readJoineryStatuses(projectHandle),
+        readJoinerySchedule(projectHandle),
+        listExistingLevels(projectHandle),
+        readMachiningFlags(projectHandle)
+      ]);
+    }).then(function(res){
+      if (seq !== projLoadSeq) return; // superseded
       // Solid Surface scoping (see filterSolidSurfaceItems/the top-of-file
       // comment): only items with hasSolidSurface===true are ever built
       // into a row here.
       var rows = buildEnrichedRows(filterSolidSurfaceItems(res[0]), res[1], res[2], projectName, projectHandle, res[4]);
-      projAllRows = rows;
-      var levelNamesFromItems = Array.from(new Set(rows.map(function(r){ return r.level; }))).sort(function(a, b){ return a.localeCompare(b, undefined, { sensitivity: "base" }); });
-      projLevelFilter.innerHTML = "<option value=\"\">All levels</option>" + levelNamesFromItems.map(function(n){ return "<option value=\"" + escapeHtml(n) + "\">" + escapeHtml(n) + "</option>"; }).join("");
-      var planLevels = res[3];
-      levelPlanSelect.innerHTML = planLevels.map(function(n){ return "<option value=\"" + escapeHtml(n) + "\">" + escapeHtml(n) + "</option>"; }).join("");
-      levelPlanRow.hidden = planLevels.length === 0;
-      renderProjTable();
+      applyProjectScheduleState(rows, res[3]);
+      projRefreshNote.hidden = true;
+      snapSet("project", projectName, { rows: rows.map(rowToSnapshot), planLevels: res[3] });
     }).catch(function(err){
+      if (seq !== projLoadSeq) return;
       console.error("Loading project schedule failed:", err);
-      showToast("Couldn't read this project's schedule.");
+      projRefreshNote.hidden = true;
+      if (!projAllRows.length){
+        // Nothing painted -- say why the table is empty instead of leaving
+        // it blank or claiming there are no items.
+        projTableBody.innerHTML = "";
+        projTable.hidden = true;
+        projEmptyAll.hidden = true;
+        projEmpty.hidden = false;
+        projEmpty.textContent = "Couldn't read this project's files right now (still syncing?) — tap Refresh to try again.";
+      }
+      showToast(isReadFailed(err) ? "Couldn't read this project's schedule (a file may still be syncing) — tap Refresh to try again." : "Couldn't read this project's schedule.");
     });
   }
 
@@ -3384,7 +4321,80 @@
   function showScreen(name){
     Object.keys(screens).forEach(function(k){ screens[k].hidden = (k !== name); });
     hideStatusHistoryPop(); // never leak the popup across a screen change (e.g. "View on plan")
+    navRecord(name); // device Back button (2026-09-25, sweep -- v6) -- see navRecord
   }
+
+  /* ---- Device / browser Back button (2026-09-25, family-wide sweep -- v6) ----
+     Same design as Install ITP v35 / Site Measure v46 / Scheduler v19
+     (Andrew: "can we make it so the phone back button goes back through the
+     app, not close the app"). Every screen change leaves one entry in the
+     browser's own history: the setup / reconnect / Home screens REPLACE
+     (they're the base -- Back from there leaves the app, as it always did),
+     everything deeper PUSHES (the Overall Solid Surface Schedule, a
+     project's schedule, and the plan canvas -- which is a fixed overlay
+     rather than one of the `screens`, so openPlanCanvasForLevel records it
+     itself). A popstate (the phone's Back button, or the browser's) first
+     closes whatever dialog or popover is open -- through its own
+     Cancel/Close control so any promise it holds settles as a tap on that
+     button would -- and otherwise steps back exactly one screen through the
+     app's own existing navigation (plan -> the table it came from; either
+     table -> Home). This app has no unsaved-changes confirm (the Set
+     Schedule dialog IS the thing being closed), but the generic "still on
+     the same screen afterwards -> put the entry back so the next press asks
+     again" guard is kept anyway. `history` is never shadowed in this file's
+     outer scope, but window.history is spelled out here to make that
+     impossible to break later. */
+  var currentScreenName = null, navPopInProgress = false;
+  var NAV_BASE = { setup: 1, reconnect: 1, home: 1 };
+  function navRecord(name){
+    if (!name || name === currentScreenName){ navPopInProgress = false; return; }
+    try{
+      if (navPopInProgress || NAV_BASE[name] || !currentScreenName) window.history.replaceState({ utz: name }, "");
+      else window.history.pushState({ utz: name }, "");
+    }catch(e){}
+    currentScreenName = name;
+    navPopInProgress = false;
+  }
+  function navRestoreEntry(){
+    if (!currentScreenName) return;
+    try{ window.history.pushState({ utz: currentScreenName }, ""); }catch(e){}
+  }
+  // Closes the topmost open dialog/popover, if any -- true when it did (the
+  // Back press is then "spent" on that, not on a screen change).
+  function closeAnyOpenOverlay(){
+    if (!statusHistoryPop.hidden){ hideStatusHistoryPop(); return true; }
+    var pairs = [
+      ["scheduleModalBackdrop", "schedCancelBtn"], ["jobNoteViewBackdrop", "jobNoteViewCancel"],
+      ["namePromptBackdrop", "namePromptCancel"], ["numberpadBackdrop", "numberpadCancel"],
+      ["identityAppChecksBackdrop", "identityAppChecksCancel"]
+    ];
+    for (var i = 0; i < pairs.length; i++){
+      var bd = document.getElementById(pairs[i][0]);
+      if (!bd || bd.hidden) continue;
+      var btn = document.getElementById(pairs[i][1]);
+      if (btn) btn.click(); else bd.hidden = true;
+      return true;
+    }
+    return false;
+  }
+  function appBackFromDeviceButton(){
+    var from = currentScreenName;
+    switch (from){
+      case "planCanvas": closePlanCanvas(); break;
+      case "overall": case "projectSchedule": showScreen("home"); break;
+      default: break;
+    }
+    // Still on the same (non-base) screen means the step back didn't
+    // happen -- put the popped entry back so the next press asks again.
+    if (currentScreenName === from && !NAV_BASE[from]) navRestoreEntry();
+    navPopInProgress = false;
+  }
+  window.addEventListener("popstate", function(){
+    if (closeAnyOpenOverlay()){ navRestoreEntry(); return; }
+    if (!currentScreenName || NAV_BASE[currentScreenName]) return; // base screen: the browser is leaving, as before
+    navPopInProgress = true;
+    appBackFromDeviceButton();
+  });
 
   var projectsRootHandle = null, projectsRootName = "";
   var homeProjectListItems = document.getElementById("homeProjectListItems");
@@ -3401,10 +4411,13 @@
     return "Couldn't open that folder -- try again.";
   }
 
-  // Requests "readwrite" from the start -- this app's only write is its
-  // own new joinery-schedule.json, but that write happens the moment
-  // someone sets their first schedule, and asking again then would mean a
-  // second picker/consent round-trip for no benefit.
+  // Requests "readwrite" from the start -- this app's writes are its own
+  // solid-surface-schedule.json (this comment used to name the main
+  // Scheduler's joinery-schedule.json, a leftover of the fork -- corrected
+  // 2026-09-25), the shared name+PIN registry, and the family's one-time
+  // legacy migrations; the first of those happens the moment someone sets
+  // their first schedule, and asking again then would mean a second
+  // picker/consent round-trip for no benefit.
   function pickProjectsRootFolder(){
     return window.showDirectoryPicker({ id: "utzline-scheduler-root", mode: "readwrite" }).then(function(handle){
       return detectFolderShape(handle).then(function(shape){
@@ -3414,6 +4427,8 @@
           return;
         }
         projectsRootHandle = handle; projectsRootName = handle.name;
+        invalidateDirHandleCache(); // a different root: no cached handle or migration memo from the last one applies
+        overallAllRows = []; projAllRows = []; activeProjectHandle = null; activeProjectName = "";
         // Remembering the folder for next time is a convenience, not a
         // requirement for this session to work -- if persisting it fails
         // for any reason, still show the project list rather than
@@ -3450,33 +4465,53 @@
   });
   reconnectBtn.addEventListener("click", function(){
     if (!projectsRootHandle) return;
+    // (2026-09-25, sweep -- v6) Was an unhandled rejection with no feedback
+    // when the permission prompt itself failed (e.g. handle no longer valid).
     projectsRootHandle.requestPermission({ mode: "readwrite" }).then(function(perm){
       if (perm !== "granted") return;
       populateHome();
+    }).catch(function(err){
+      console.error("Reconnect failed:", err);
+      showToast("Couldn't reconnect to that folder -- choose it again.");
     });
   });
 
+  function renderHomeProjectList(names){
+    homeProjectListItems.innerHTML = "";
+    homeProjectListEmpty.hidden = names.length > 0;
+    names.forEach(function(name){
+      var row = document.createElement("button");
+      row.className = "list-item";
+      row.innerHTML = "<span>" + escapeHtml(name) + "</span><span class=\"chev\">&rsaquo;</span>";
+      row.addEventListener("click", function(){ openProjectSchedule(name); });
+      homeProjectListItems.appendChild(row);
+    });
+  }
+  // (2026-09-25, sweep -- v6) Home paints its last-known project list from
+  // the device-local snapshot at once and shows the screen, then lists the
+  // folder behind it and repaints -- the root listing is one call, but on
+  // an Android/Dropbox folder even that one is a visible wait at boot.
   function populateHome(){
     populateIdentitySelector(); // needs projectsRootHandle to read utzline-users.csv -- best-effort, never blocks
-    return listExistingProjects(projectsRootHandle).then(function(names){
-      homeProjectListItems.innerHTML = "";
-      homeProjectListEmpty.hidden = names.length > 0;
-      names.forEach(function(name){
-        var row = document.createElement("button");
-        row.className = "list-item";
-        row.innerHTML = "<span>" + escapeHtml(name) + "</span><span class=\"chev\">&rsaquo;</span>";
-        row.addEventListener("click", function(){ openProjectSchedule(name); });
-        homeProjectListItems.appendChild(row);
-      });
-      document.title = "UTZLINE Solid Surface Schedule";
+    document.title = "UTZLINE Solid Surface Schedule";
+    return snapGet("home", null).then(function(snap){
+      if (snap && Array.isArray(snap.projects) && snap.projects.length){
+        renderHomeProjectList(snap.projects);
+        showScreen("home");
+      }
+    }).then(function(){
+      return listExistingProjects(projectsRootHandle);
+    }).then(function(names){
+      renderHomeProjectList(names);
       showScreen("home");
+      snapSet("home", null, { projects: names });
     }).catch(function(err){
       console.error("Listing projects failed:", err);
       showToast("Couldn't list projects in this folder.");
     });
   }
   function openProjectSchedule(name){
-    return projectsRootHandle.getDirectoryHandle(name, { create: false }).then(function(dirH){
+    return getProjectHandleByName(name).then(function(dirH){
       showScreen("projectSchedule");
       return loadProjectSchedule(dirH, name);
     }).catch(function(err){
@@ -3492,6 +4527,21 @@
   document.getElementById("backFromProjectScheduleBtn").addEventListener("click", function(){ showScreen("home"); });
 
   /* ============================== boot ============================== */
+  // Shared by both the normal path (a handle already in THIS app's own
+  // database) and the one-time carry-over path (a handle just copied
+  // across from the old shared database) -- see
+  // readLegacyRootHandleForCarryOver's own comment.
+  function continueBootWithRootHandle(handle){
+    projectsRootHandle = handle; projectsRootName = handle.name;
+    invalidateDirHandleCache();
+    return handle.queryPermission({ mode: "readwrite" }).then(function(perm){
+      if (perm === "granted"){
+        return populateHome();
+      }
+      reconnectName.textContent = projectsRootName;
+      showScreen("reconnect");
+    });
+  }
   function boot(){
     if (typeof window.showDirectoryPicker !== "function"){
       setupError.hidden = false;
@@ -3501,15 +4551,23 @@
     }
     loadDeviceUserName(); // shared device identity -- never blocks boot; also fires from populateHome() above, since order isn't guaranteed
     idbGet("projectsRootHandle").then(function(handle){
-      if (!handle){ showScreen("setup"); return; }
-      projectsRootHandle = handle; projectsRootName = handle.name;
-      return handle.queryPermission({ mode: "readwrite" }).then(function(perm){
-        if (perm === "granted"){
-          return populateHome();
-        }
-        reconnectName.textContent = projectsRootName;
-        showScreen("reconnect");
-      });
+      if (handle) return continueBootWithRootHandle(handle);
+      // Nothing in THIS app's own (new, v7) database yet -- one-time,
+      // best-effort carry-over from the old shared database before falling
+      // back to "choose your Projects folder". See
+      // readLegacyRootHandleForCarryOver's own comment: never writes to,
+      // deletes, or otherwise disturbs the old database.
+      return readLegacyRootHandleForCarryOver().then(function(legacyHandle){
+        if (!legacyHandle){ showScreen("setup"); return; }
+        // Persisting it into THIS app's own database is itself best-effort
+        // (same as pickProjectsRootFolder) -- a failed write here still
+        // continues booting with the carried-over handle for THIS session,
+        // it just means next boot falls back to "choose your Projects
+        // folder" again.
+        return idbSet("projectsRootHandle", legacyHandle).catch(function(){}).then(function(){
+          return continueBootWithRootHandle(legacyHandle);
+        });
+      }).catch(function(){ showScreen("setup"); });
     }).catch(function(){
       projectsRootHandle = null; projectsRootName = "";
       showScreen("setup");
@@ -3538,7 +4596,10 @@
     readJoineryItems: readJoineryItems,
     readJoineryStatuses: readJoineryStatuses,
     readJoinerySchedule: readJoinerySchedule,
-    writeJoinerySchedule: writeJoinerySchedule,
+    writeJoineryScheduleEvent: writeJoineryScheduleEvent,
+    foldJoinerySchedule: foldJoinerySchedule,
+    readLegacyJoinerySchedule: readLegacyJoinerySchedule,
+    joineryScheduleEventsBranchName: joineryScheduleEventsBranchName,
     readMainJoinerySchedule: readMainJoinerySchedule,
     findScheduleRecord: findScheduleRecord,
     filterSolidSurfaceItems: filterSolidSurfaceItems,
@@ -3555,11 +4616,18 @@
     onPlanRightClickOrLongPress: onPlanRightClickOrLongPress,
     onPlanTap: onPlanTap,
     planMarkerAt: function(){ return planMarkerAt.apply(null, arguments); },
-    setPlanView: function(v){ Object.assign(planView, v); planApplyTransform(); },
+    setPlanView: function(v){ Object.assign(planView, v); planApplyTransformNow(); },
     getPlanView: function(){ return planView; },
     loadOverallSchedule: loadOverallSchedule,
     loadProjectSchedule: loadProjectSchedule,
     openProjectSchedule: openProjectSchedule,
+    // (2026-09-25, sweep -- v6) -- the back-button walk, the strict readers
+    // and the snapshot cache, so the new regression tests can exercise them.
+    readUsersCsv: readUsersCsv,
+    readMainScheduleRecordForItem: readMainScheduleRecordForItem,
+    snapGet: snapGet,
+    getCurrentScreenName: function(){ return currentScreenName; },
+    getDirHandleCacheSize: function(){ return Object.keys(dirHandleCache).length; },
     ready: function(){ return true; }
   };
 

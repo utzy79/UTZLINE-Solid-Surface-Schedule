@@ -243,7 +243,8 @@ var ICON_VERSION = "v1";
 // cache-strategy change; CACHE_NAME bumped. New
 // run_solid_surface_schedule_sub_orders_received.js (pdftest-projects).
 // See the README's v13 entry.)
-var CACHE_NAME = "utzline-solid-surface-schedule-cache-v13";
+// v14 (2026-09-27): "Schedule Backups" folder hidden from the project list.
+var CACHE_NAME = "utzline-solid-surface-schedule-cache-v14";
 
 var PRECACHE_URLS = [
   "./",

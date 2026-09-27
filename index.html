@@ -488,6 +488,21 @@
   .identity-row{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
   .identity-text{ font-size:12px; color:var(--muted); max-width:520px; }
   .identity-select{ max-width:190px; }
+  /* Read-only "Company logo" preview (2026-09-27) -- Andrew, verbatim:
+     "change company logo should only be visable in the projects app, in
+     every other app it should load the one chosen in projects." This app
+     never showed a logo anywhere before now; sourced from the shared
+     company-logo.png file at the Projects root, no upload/remove UI. */
+  .company-logo-row{ display:flex; align-items:center; gap:14px; margin-bottom:16px; }
+  .company-logo-preview{
+    width: 56px; height: 56px; border-radius: 10px;
+    background: var(--panel); border: 1px solid var(--border);
+    display:flex; align-items:center; justify-content:center;
+    overflow: hidden; flex: 0 0 auto;
+  }
+  .company-logo-preview img{ max-width: 100%; max-height: 100%; }
+  .company-logo-preview .placeholder{ color: var(--muted2); font-size: 10px; text-align:center; }
+  .company-logo-label{ font-size: 12px; color: var(--muted); }
   @keyframes numberpadShake{ 10%,90%{transform:translateX(-1px);} 20%,80%{transform:translateX(2px);} 30%,50%,70%{transform:translateX(-5px);} 40%,60%{transform:translateX(5px);} }
   .numberpad-shake{ animation:numberpadShake .4s; }
 
@@ -510,6 +525,26 @@
      both axes; tapping a row's button must not fight the pan -- `pan-x pan-y`
      tells the browser the scroll is its job and the tap is ours. */
   .table-scroll{ overflow-x: auto; touch-action: pan-x pan-y; -webkit-overflow-scrolling: touch; }
+  /* ---- Sticky bottom horizontal scroll bar (2026-09-27) ----
+     Andrew, verbatim: "can we make the horizontal scroll bars in the
+     schedule always appear, we cant scroll all the way to the bottom of
+     the page to find them." A wide .sched-table can run to hundreds of
+     rows, so .table-scroll's own native horizontal scrollbar sits at the
+     very bottom of that (very tall) box -- effectively the very bottom of
+     the whole page. This bar is a single, ALWAYS-reachable mirror of it,
+     pinned to the bottom of the browser viewport (not the page), synced
+     both ways with whichever .table-scroll is the active screen's own
+     overflowing table. See refreshStickyHScroll() further down for the
+     sync logic; a plain single bar is enough since only one screen (and
+     so only one overflowing table) is ever visible at a time. */
+  .sticky-hscroll-bar{
+    position: fixed; left: 0; right: 0; bottom: 0;
+    height: 16px; overflow-x: scroll; overflow-y: hidden;
+    background: var(--panel2); border-top: 1px solid var(--border);
+    z-index: 20; -webkit-overflow-scrolling: touch;
+  }
+  .sticky-hscroll-bar[hidden]{ display: none; }
+  .sticky-hscroll-spacer{ height: 1px; }
   /* Instant-paint refresh note (2026-09-25, sweep -- v6): shown while a table
      painted from its last-known device-local snapshot is being refreshed
      from the folder in the background. */
@@ -767,6 +802,10 @@
       <div class="identity-text" id="deviceUserNameText">Your name &amp; PIN: not set — attributed on schedules you set on this device.</div>
       <select class="btn secondary identity-select" id="identitySelector" aria-label="Your name"></select>
     </div>
+    <div class="company-logo-row" id="companyLogoRow">
+      <div class="company-logo-preview" id="companyLogoPreviewBox"><span class="placeholder">No logo</span></div>
+      <div class="company-logo-label">Company logo — set in the UTZLINE Projects app.</div>
+    </div>
     <div class="section-title">Projects</div>
     <div class="list" id="homeProjectListItems"></div>
     <div class="empty-note" id="homeProjectListEmpty" hidden>No projects found in this folder.</div>
@@ -957,6 +996,14 @@
   <div id="toast"></div>
 
 </main>
+
+<!-- Sticky bottom horizontal scroll bar (2026-09-27) -- see the CSS rule's
+     own comment. Outside <main> so its position:fixed is never at the
+     mercy of any ancestor layout; one shared bar for every screen, shown/
+     hidden and re-synced by refreshStickyHScroll(). -->
+<div class="sticky-hscroll-bar" id="stickyHScrollBar" hidden>
+  <div class="sticky-hscroll-spacer" id="stickyHScrollSpacer"></div>
+</div>
 
 <!-- ---- Read-only plan canvas ---- -->
 <section id="screenPlanCanvas" class="plan-canvas-screen" hidden>
@@ -3619,6 +3666,7 @@
     planReturnScreen = returnScreen || "home";
     planCanvasTitle.textContent = projectName + " — " + levelName;
     planCanvasScreen.hidden = false;
+    refreshStickyHScroll(); // the plan canvas covers the schedule table underneath -- hide its sticky bar too
     hideStatusHistoryPop();
     navRecord("planCanvas"); // device Back button (2026-09-25, sweep -- v6) -- see navRecord
     planItemsP = readJoineryItems(projectHandle); // once per plan open, reused by every marker tap -- see planFindItemForMarker
@@ -4066,6 +4114,37 @@
   var identitySelector = document.getElementById("identitySelector");
   var IDENTITY_NEW_VALUE = "__new__";
   var IDENTITY_PLACEHOLDER_VALUE = "__none__";
+
+  /* ---- Company logo (read-only, 2026-09-27) ----
+     Andrew, verbatim: "change company logo should only be visable in the
+     projects app, in every other app it should load the one chosen in
+     projects." UTZLINE Projects owns the only write path -- this app just
+     reads the same "company-logo.png" file at the Projects root,
+     best-effort, no upload/remove UI of its own. */
+  var companyLogoPreviewBox = document.getElementById("companyLogoPreviewBox");
+  var companyLogoObjectUrl = null;
+  function readCompanyLogoReadOnly(){
+    if (!projectsRootHandle) return Promise.resolve(null);
+    return projectsRootHandle.getFileHandle("company-logo.png", { create: false }).then(function(fh){
+      return fh.getFile();
+    }).then(function(file){
+      return file.arrayBuffer();
+    }).then(function(buf){
+      if (companyLogoObjectUrl) URL.revokeObjectURL(companyLogoObjectUrl);
+      companyLogoObjectUrl = URL.createObjectURL(new Blob([buf]));
+      return companyLogoObjectUrl;
+    }, function(){ return null; });
+  }
+  function refreshCompanyLogoPreview(){
+    if (!companyLogoPreviewBox) return Promise.resolve();
+    return readCompanyLogoReadOnly().then(function(url){
+      if (url){
+        companyLogoPreviewBox.innerHTML = "<img src=\"" + url + "\" alt=\"Company logo\">";
+      } else {
+        companyLogoPreviewBox.innerHTML = "<span class=\"placeholder\">No logo</span>";
+      }
+    });
+  }
 
   function populateIdentitySelector(){
     if (!identitySelector) return Promise.resolve();
@@ -4595,7 +4674,7 @@
     // hide the Joinery Item screen itself -- a bug caught by this app's own
     // v8 test suite: without this line the item screen stayed visible ON
     // TOP of the just-revealed plan underneath it.
-    if (joineryItemReturnToPlan){ screens.joineryItem.hidden = true; planCanvasScreen.hidden = false; navRecord("planCanvas"); return; }
+    if (joineryItemReturnToPlan){ screens.joineryItem.hidden = true; planCanvasScreen.hidden = false; navRecord("planCanvas"); refreshStickyHScroll(); return; }
     showScreen(joineryItemReturnScreen);
   }
   backFromJoineryItemBtn.addEventListener("click", closeJoineryItemPage);
@@ -4706,6 +4785,62 @@
     var t = 0;
     return function(){ clearTimeout(t); t = setTimeout(fn, ms); };
   }
+
+  /* ---- Sticky bottom horizontal scroll bar (2026-09-27) ----
+     See the .sticky-hscroll-bar CSS rule's own comment for the "why".
+     Only one screen is ever visible at a time (the `screens` map's own
+     [hidden] toggle, plus the plan-canvas overlay which fully covers
+     everything when it's open), so a single shared bar mirroring
+     whichever .table-scroll is both visible and actually overflowing is
+     enough -- no per-table bar needed. */
+  var stickyHScrollBar = document.getElementById("stickyHScrollBar");
+  var stickyHScrollSpacer = document.getElementById("stickyHScrollSpacer");
+  var stickyHScrollTarget = null;
+  var stickyHScrollSyncing = false;
+  function findActiveTableScroll(){
+    if (!planCanvasScreen.hidden) return null; // the plan canvas overlay fully covers the schedule table underneath
+    var active = document.querySelector(".screen:not([hidden])");
+    if (!active) return null;
+    var candidates = active.querySelectorAll(".table-scroll");
+    for (var i = 0; i < candidates.length; i++){
+      var el = candidates[i];
+      if (el.offsetParent === null) continue; // this .table-scroll itself is hidden
+      if (el.scrollWidth > el.clientWidth + 1) return el;
+    }
+    return null;
+  }
+  function refreshStickyHScroll(){
+    stickyHScrollTarget = findActiveTableScroll();
+    if (!stickyHScrollTarget){
+      stickyHScrollBar.hidden = true;
+      return;
+    }
+    stickyHScrollBar.hidden = false;
+    stickyHScrollSpacer.style.width = stickyHScrollTarget.scrollWidth + "px";
+    stickyHScrollSyncing = true;
+    stickyHScrollBar.scrollLeft = stickyHScrollTarget.scrollLeft;
+    stickyHScrollSyncing = false;
+  }
+  stickyHScrollBar.addEventListener("scroll", function(){
+    if (!stickyHScrollTarget || stickyHScrollSyncing) return;
+    stickyHScrollSyncing = true;
+    stickyHScrollTarget.scrollLeft = stickyHScrollBar.scrollLeft;
+    stickyHScrollSyncing = false;
+  });
+  // One scroll listener per real .table-scroll (there are only ever two:
+  // the Overall Schedule table and the per-project one), each a no-op
+  // unless it's the currently-mirrored one -- so dragging the REAL
+  // scrollbar (or panning the table directly on a touch device) keeps the
+  // sticky bar in sync too, not just the other way round.
+  Array.prototype.forEach.call(document.querySelectorAll(".table-scroll"), function(el){
+    el.addEventListener("scroll", function(){
+      if (el !== stickyHScrollTarget || stickyHScrollSyncing) return;
+      stickyHScrollSyncing = true;
+      stickyHScrollBar.scrollLeft = el.scrollLeft;
+      stickyHScrollSyncing = false;
+    });
+  });
+
   function renderOverallTable(){
     hideStatusHistoryPop(); // the cell it was anchored to is about to be rebuilt (sweep -- v6: it used to be left floating)
     var filtered = overallAllRows.filter(overallMatchesFilters);
@@ -4729,6 +4864,7 @@
       }
     });
     updateStickyOffsets(overallTable);
+    refreshStickyHScroll();
   }
   Array.prototype.forEach.call(overallTable.querySelectorAll("th"), function(th){
     var col = th.getAttribute("data-col");
@@ -4901,6 +5037,7 @@
       }
     });
     updateStickyOffsets(projTable);
+    refreshStickyHScroll();
   }
   Array.prototype.forEach.call(projTable.querySelectorAll("th"), function(th){
     var col = th.getAttribute("data-col");
@@ -4925,6 +5062,7 @@
   window.addEventListener("resize", debounce(function(){
     updateStickyOffsets(overallTable);
     updateStickyOffsets(projTable);
+    refreshStickyHScroll();
   }, 150));
 
   function applyProjectScheduleState(rows, planLevels){
@@ -5020,6 +5158,7 @@
     Object.keys(screens).forEach(function(k){ screens[k].hidden = (k !== name); });
     hideStatusHistoryPop(); // never leak the popup across a screen change (e.g. "View on plan")
     navRecord(name); // device Back button (2026-09-25, sweep -- v6) -- see navRecord
+    refreshStickyHScroll(); // a different screen means a different (or no) overflowing table
   }
 
   /* ---- Device / browser Back button (2026-09-25, family-wide sweep -- v6) ----
@@ -5193,6 +5332,7 @@
   // an Android/Dropbox folder even that one is a visible wait at boot.
   function populateHome(){
     populateIdentitySelector(); // needs projectsRootHandle to read utzline-users.csv -- best-effort, never blocks
+    refreshCompanyLogoPreview(); // needs projectsRootHandle to read company-logo.png -- best-effort, never blocks
     document.title = "UTZLINE Solid Surface Schedule";
     return snapGet("home", null).then(function(snap){
       if (snap && Array.isArray(snap.projects) && snap.projects.length){
@@ -5289,6 +5429,31 @@
   // window.showDirectoryPicker fake), without needing a real browser
   // right-click/long-press gesture for every scenario.
   window.__testHooks = {
+    refreshStickyHScroll: refreshStickyHScroll,
+    findActiveTableScroll: findActiveTableScroll,
+    // 2026-09-27, company logo read-only preview -- a minimal fake
+    // projectsRootHandle (just enough of getFileHandle/getFile/arrayBuffer
+    // to exercise readCompanyLogoReadOnly()) rather than a full project/
+    // folder mock.
+    setFakeCompanyLogoForTest: function(hasLogo, bytesArray){
+      var fakeRoot = {
+        getFileHandle: function(name, opts){
+          if (name === "company-logo.png" && hasLogo){
+            return Promise.resolve({
+              getFile: function(){
+                return Promise.resolve({
+                  arrayBuffer: function(){ return Promise.resolve(new Uint8Array(bytesArray || []).buffer); }
+                });
+              }
+            });
+          }
+          return Promise.reject(new DOMException("Not found", "NotFoundError"));
+        }
+      };
+      projectsRootHandle = fakeRoot;
+      return refreshCompanyLogoPreview();
+    },
+    companyLogoPreviewHTML: function(){ return companyLogoPreviewBox ? companyLogoPreviewBox.innerHTML : null; },
     subtractBusinessDays: subtractBusinessDays,
     todayDateStr: todayDateStr,
     computeDelayInfo: computeDelayInfo,

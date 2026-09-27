@@ -210,8 +210,29 @@
 // back to 🏭, machined back to ⚙️ (NEXT_RUN_NOTES.md item 2). Shipped as its
 // own version since v9 was already delivered before this fix landed. No
 // cache-strategy change; CACHE_NAME bumped. See the README's v10 entry.)
+// v11, 2026-09-27: sticky bottom horizontal scroll bar (general note, not
+// scoped to one app) -- Andrew, verbatim: "can we make the horizontal
+// scroll bars in the schedule always appear, we cant scroll all the way to
+// the bottom of the page to find them." A new #stickyHScrollBar, pinned to
+// the bottom of the viewport (not the page), mirrors whichever
+// .table-scroll is the active screen's own overflowing table, synced both
+// ways (refreshStickyHScroll()), wired onto this app's own existing
+// updateStickyOffsets()-driven resize handler. Identical fix also shipped
+// to Scheduler and Machine Schedule, each its own version bump. New
+// run_solid_surface_schedule_sticky_hscroll_bar.js (pdftest-projects).
 var ICON_VERSION = "v1";
-var CACHE_NAME = "utzline-solid-surface-schedule-cache-v10";
+// (v12, 2026-09-27: company logo (general note, not scoped to one app) --
+// Andrew, verbatim: "change company logo should only be visable in the
+// projects app, in every other app it should load the one chosen in
+// projects." This app never showed a company logo anywhere before now --
+// a new read-only "Company logo" card on the Home screen, sourced from the
+// shared "company-logo.png" file at the Projects root (projectsRootHandle),
+// no upload/remove controls, no PDF-export wiring. New
+// run_solid_surface_schedule_company_logo_readonly.js (pdftest-projects).
+// Same fix already shipped family-wide to Install/Manufacture/Delivery ITP,
+// Site Measure/Viewer, Machine Schedule, and Scheduler -- all 8 apps now
+// done.)
+var CACHE_NAME = "utzline-solid-surface-schedule-cache-v12";
 
 var PRECACHE_URLS = [
   "./",

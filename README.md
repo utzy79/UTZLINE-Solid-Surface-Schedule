@@ -1,8 +1,10 @@
 # UTZLINE Solid Surface Schedule — installable app
 
-**Current version: v9** (its own independent version line, separate from
+**Current version: v10** (its own independent version line, separate from
 every other app in the family — bump this line, and add a dated entry
 below, every time a new build ships.)
+
+**v10 (2026-09-26, same day):** Family-wide status icon revert (`NEXT_RUN_NOTES.md` item 2) — same-day follow-up to v9, shipped as its own version since v9 had already been zipped and delivered before this fix landed. Andrew's earlier icon-sweep round changed `in_manufacture`: 🏭→🔨 and `machined`: ⚙️→🪚; this reverts both back to the original icons (`in_manufacture`: 🏭, `machined`: ⚙️) across the family. Grepped for every literal 🔨/🪚 occurrence in this app — clean, no live code hit either icon. The 7 pre-existing tests in `pdftest-projects` re-run individually — all still pass (none carried a stale icon assertion). `service-worker.js` cache bumped to `utzline-solid-surface-schedule-cache-v10`. Does not touch source.html, any ITP app, UTZLINE Scheduler, or UTZLINE Machine Schedule — each ships this same revert on its own next update, per the standing per-app process note.
 
 **v9 (2026-09-26, same day):** Andrew, verbatim: *"now update the schedules,"* — read (per the standing per-app process note in `NEXT_RUN_NOTES.md`) as "build this app's own queued Scheduler-family items now" — this app's own portion of items 4/5/6 (item 3, the Required delivery date column, is Machine-Schedule-only — this app already has its own "Required Delivery Date" column).
 

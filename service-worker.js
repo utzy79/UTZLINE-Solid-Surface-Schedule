@@ -205,8 +205,13 @@
 // wrapper) and is viewport-width-based, not OS/UA-based (sticky only at/
 // above 900px; a plain, fully-scrollable table below it). No cache-strategy
 // change; CACHE_NAME bumped. See the README's v9 entry.)
+//
+// v10, 2026-09-26, same day: family-wide status icon revert -- in_manufacture
+// back to 🏭, machined back to ⚙️ (NEXT_RUN_NOTES.md item 2). Shipped as its
+// own version since v9 was already delivered before this fix landed. No
+// cache-strategy change; CACHE_NAME bumped. See the README's v10 entry.)
 var ICON_VERSION = "v1";
-var CACHE_NAME = "utzline-solid-surface-schedule-cache-v9";
+var CACHE_NAME = "utzline-solid-surface-schedule-cache-v10";
 
 var PRECACHE_URLS = [
   "./",

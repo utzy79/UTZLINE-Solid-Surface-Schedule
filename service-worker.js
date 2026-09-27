@@ -232,7 +232,18 @@ var ICON_VERSION = "v1";
 // Same fix already shipped family-wide to Install/Manufacture/Delivery ITP,
 // Site Measure/Viewer, Machine Schedule, and Scheduler -- all 8 apps now
 // done.)
-var CACHE_NAME = "utzline-solid-surface-schedule-cache-v12";
+// (v13, 2026-09-27: "Sub orders" card on the Joinery Item page -- Andrew,
+// verbatim: "ok now we need all joinery summary pages to show the
+// associated orders. with the option to mark them as recieved." Reads
+// UTZLINE Sub Orders' own Orders/<Level> - <Room> - <JoineryId>.json once
+// per page open, grouped by type, with an Open button per order file and
+// a Received tick + date that writes back ONLY received/receivedDate on
+// the matching entry (shallow copy of the raw on-disk entry, never a
+// field allowlist). Never touches Sub Orders' Inbox/ or Files/. No
+// cache-strategy change; CACHE_NAME bumped. New
+// run_solid_surface_schedule_sub_orders_received.js (pdftest-projects).
+// See the README's v13 entry.)
+var CACHE_NAME = "utzline-solid-surface-schedule-cache-v13";
 
 var PRECACHE_URLS = [
   "./",

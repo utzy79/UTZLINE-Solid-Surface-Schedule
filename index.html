@@ -631,6 +631,13 @@
   .sched-table td.wrap{ white-space: normal; }
   .sched-table tbody tr:last-child td{ border-bottom: none; }
   .sched-table tbody tr:hover{ background: var(--panel2); }
+  /* v15 -- a long press on a row opens its joinery item page */
+  .sched-table tbody tr{ -webkit-touch-callout: none; }
+  /* (v15) the tint is an inset shadow over the cell's own background, not a
+     translucent background -- the frozen columns must stay opaque or the
+     columns scrolled under them show through while a row is held */
+  .sched-table tbody tr.lp-pressing td{ box-shadow: inset 0 0 0 100vmax rgba(31,143,191,0.18); transition: box-shadow .5s; }
+  @media (pointer: coarse){ .sched-table tbody tr{ -webkit-user-select: none; user-select: none; } }
   .status-label{ display: inline-flex; align-items: center; gap: 6px; }
   .status-label .status-icon{ font-size: 13px; }
   .muted-cell{ color: var(--muted2); }
@@ -711,6 +718,7 @@
     .sched-table thead th.sticky-col{ z-index: 3; }
     .sched-table tbody tr:hover td.sticky-col{ background: var(--panel2); }
     .sched-table .sticky-col-last{ border-right: 1px solid var(--border); box-shadow: 3px 0 6px -3px rgba(0,0,0,0.45); }
+    .sched-table tbody tr.lp-pressing td.sticky-col-last{ box-shadow: inset 0 0 0 100vmax rgba(31,143,191,0.18), 3px 0 6px -3px rgba(0,0,0,0.45); }
     #overallTable .sticky-col:nth-child(1), #projTable .sticky-col:nth-child(1){ left: var(--sc0, 0px); }
     #overallTable .sticky-col:nth-child(2), #projTable .sticky-col:nth-child(2){ left: var(--sc1, 0px); }
     #overallTable .sticky-col:nth-child(3), #projTable .sticky-col:nth-child(3){ left: var(--sc2, 0px); }
@@ -810,12 +818,15 @@
   .error-note{ color: #ff8080; font-size: 13px; margin-top: 10px; }
   .error-note[hidden]{ display: none; }
 </style>
+<style>/* (RC 1.0) the small release tag on the logo */
+.rc-tag{ display:inline-block; margin-left:7px; padding:0 4px; border:1px solid currentColor; border-radius:4px; font-size:9px; line-height:13px; font-weight:600; letter-spacing:.05em; opacity:.55; vertical-align:middle; position:relative; top:-1px; white-space:nowrap; text-transform:none; font-style:normal; }
+</style>
 </head>
 <body>
 
 <header>
   <img src="./icons/icon-192.png" alt="">
-  <div class="brand">UTZLINE Solid Surface Schedule<small>Solid Surface delivery &amp; manufacture dates</small></div>
+  <div class="brand">UTZLINE Solid Surface Schedule<span class="rc-tag" title="Release candidate 1.0">RC 1.0</span><small>Solid Surface delivery &amp; manufacture dates</small></div>
 </header>
 
 <main>
@@ -4588,6 +4599,46 @@
         (row.jobNote ? "<button type=\"button\" class=\"btn secondary sm jobnote-btn\">Open job note</button>" : "") +
         "<button type=\"button\" class=\"btn secondary sm view-plan-btn\">View on plan</button><button type=\"button\" class=\"btn secondary sm edit-sched-btn\">Edit schedule</button></td>";
   }
+  /* v15 -- Andrew: "in the schedules, make it so a long press on a row
+     takes you to that joinery item summary page". A long press (0.55 s,
+     finger or mouse) anywhere on a row that isn't a button opens the item,
+     same as Open item; a right-click does too. Moving more than a few
+     pixels (scrolling the table) cancels it; the row tints while held. The
+     tap that ends a long press never reaches the cells, and an Android
+     long-press's own context menu is swallowed. */
+  var ROW_LONG_PRESS_MS = 550;
+  function wireRowLongPress(tr, open){
+    var timer = null, start = null, fired = false;
+    function onControl(t){ return !!(t && t.closest && t.closest("button, a, input, select, textarea, label")); }
+    function cancel(){ if (timer){ clearTimeout(timer); timer = null; } tr.classList.remove("lp-pressing"); }
+    tr.addEventListener("pointerdown", function(e){
+      fired = false;
+      if ((e.button !== undefined && e.button !== 0) || onControl(e.target)) return;
+      start = { x: e.clientX, y: e.clientY };
+      cancel();
+      tr.classList.add("lp-pressing");
+      timer = setTimeout(function(){ timer = null; fired = true; tr.classList.remove("lp-pressing"); open(); }, ROW_LONG_PRESS_MS);
+    });
+    tr.addEventListener("pointermove", function(e){
+      if (timer && start && (Math.abs(e.clientX - start.x) > 8 || Math.abs(e.clientY - start.y) > 8)) cancel();
+    });
+    tr.addEventListener("pointerup", cancel);
+    tr.addEventListener("pointercancel", cancel);
+    tr.addEventListener("pointerleave", cancel);
+    tr.addEventListener("contextmenu", function(e){
+      if (onControl(e.target)) return;
+      e.preventDefault();
+      if (fired) return;
+      cancel();
+      fired = true;
+      open();
+    });
+    tr.addEventListener("click", function(e){
+      if (!fired) return;
+      fired = false;
+      e.stopPropagation(); e.preventDefault();
+    }, true);
+  }
   function wireRowActions(tr, row, returnScreen){
     var openItemBtn = tr.querySelector(".open-item-btn");
     var jobNoteBtn = tr.querySelector(".jobnote-btn");
@@ -4609,6 +4660,7 @@
     openItemBtn.addEventListener("click", function(){
       withHandle(function(){ openJoineryItemPage(row, returnScreen); });
     });
+    wireRowLongPress(tr, function(){ withHandle(function(){ openJoineryItemPage(row, returnScreen); }); }); // v15
     if (jobNoteBtn){
       jobNoteBtn.addEventListener("click", function(){
         withHandle(function(){ openJobNoteDialogForRow(row); });

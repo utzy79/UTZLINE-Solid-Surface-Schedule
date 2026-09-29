@@ -244,7 +244,9 @@ var ICON_VERSION = "v1";
 // run_solid_surface_schedule_sub_orders_received.js (pdftest-projects).
 // See the README's v13 entry.)
 // v14 (2026-09-27): "Schedule Backups" folder hidden from the project list.
-var CACHE_NAME = "utzline-solid-surface-schedule-cache-v14";
+// v15 (2026-09-28): long press on a row opens its joinery item page.
+// v16 (2026-09-29): RC 1.0 -- the version is shown as RC 1.0, with a small "RC 1.0" tag on the logo.
+var CACHE_NAME = "utzline-solid-surface-schedule-cache-v16";
 
 var PRECACHE_URLS = [
   "./",

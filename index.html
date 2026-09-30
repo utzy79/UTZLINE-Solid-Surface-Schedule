@@ -617,6 +617,28 @@
   /* Instant-paint refresh note (2026-09-25, sweep -- v6): shown while a table
      painted from its last-known device-local snapshot is being refreshed
      from the folder in the background. */
+
+  /* ---- (v17) Tables: the column titles always visible, and zoomable --
+     the Scheduler's (v35), which Andrew liked: "ok the way you have made teh
+     tables zoomable and locked the top of the page is perferct, do that for
+     all schedules". Each table scrolls inside its own box (up to the
+     screen's height), so its title row stays pinned at the top while the
+     rows scroll under it; the frozen columns' titles are pinned both ways.
+     "Text size − 100% +" above each table (or a two-finger pinch on it, or
+     Ctrl + wheel) zooms the whole table, 60%-200%, kept per table on this
+     device. ---- */
+  .table-scroll{ overflow-y: auto; max-height: calc(100vh - 70px); max-height: calc(100dvh - 70px); overscroll-behavior: contain; padding-top: 0; }
+  .table-scroll > table{ zoom: var(--tz, 1); }
+  .table-scroll > table thead th{ position: sticky; top: 0; z-index: 3; background: var(--panel); box-shadow: inset 0 -1px 0 var(--border); }
+  @media (min-width: 900px){
+    .table-scroll > .sched-table thead th.sticky-col{ z-index: 5; }
+    .table-scroll > .sched-table thead th.sticky-col-last{ box-shadow: inset 0 -1px 0 var(--border), 3px 0 6px -3px rgba(0,0,0,0.5); }
+  }
+  .tv-zoom{ display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin: 0 0 8px; font-size: 12px; color: var(--muted); }
+  .tv-zoom[hidden]{ display: none; }
+  .tv-zoom button{ min-width: 34px; height: 30px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font: 600 15px/1 inherit; cursor: pointer; touch-action: manipulation; }
+  .tv-zoom .tv-pct{ min-width: 46px; text-align: center; font-variant-numeric: tabular-nums; }
+
   .refresh-note{ font-size: 12px; color: var(--muted2); margin: 0 0 10px; }
   .sched-table{ width: 100%; border-collapse: collapse; font-size: 13px; min-width: 900px; }
   .sched-table th{
@@ -633,6 +655,7 @@
   .sched-table tbody tr:hover{ background: var(--panel2); }
   /* v15 -- a long press on a row opens its joinery item page */
   .sched-table tbody tr{ -webkit-touch-callout: none; }
+  .sched-table tbody tr.row-open{ cursor: pointer; } /* (v17) a click on a row opens its item */
   /* (v15) the tint is an inset shadow over the cell's own background, not a
      translucent background -- the frozen columns must stay opaque or the
      columns scrolled under them show through while a row is held */
@@ -821,6 +844,820 @@
 <style>/* (RC 1.0) the small release tag on the logo */
 .rc-tag{ display:inline-block; margin-left:7px; padding:0 4px; border:1px solid currentColor; border-radius:4px; font-size:9px; line-height:13px; font-weight:600; letter-spacing:.05em; opacity:.55; vertical-align:middle; position:relative; top:-1px; white-space:nowrap; text-transform:none; font-style:normal; }
 </style>
+<!-- UTZLINE-ITEM-EXTRAS BEGIN (generated from shared/item-extras -- don't edit here) -->
+<style>
+  /* ---- UTZLINE item extras: the Cutting file + Notes columns and summary cards (2026-09-29) -- see item-extras.js ---- */
+  .ix-cut-cell{ min-width: 180px; }
+  .ix-cut-input{ width: 190px; max-width: 100%; box-sizing: border-box; background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 7px; padding: 5px 8px; font: inherit; font-size: 12px; }
+  .ix-cut-input::placeholder{ color: var(--muted2); }
+  .ix-cut-input:focus{ outline: none; border-color: var(--accent); }
+  .ix-cut-input:disabled{ opacity: .5; }
+  .ix-cut-input.ix-dirty{ border-color: var(--warn); }
+  .ix-cut-input.ix-saving{ opacity: .6; }
+  .ix-cut-input.ix-saved{ border-color: var(--ok); }
+  .sched-table td.ix-notes-cell{ min-width: 170px; max-width: 260px; white-space: normal; }
+  .ix-notes-btn{ display: flex; align-items: flex-start; gap: 6px; width: 100%; min-width: 150px; text-align: left; background: transparent; color: var(--text); border: 1px dashed var(--border); border-radius: 7px; padding: 5px 8px; font: inherit; font-size: 12px; cursor: pointer; touch-action: manipulation; }
+  .ix-notes-btn:hover{ border-color: var(--accent); }
+  .ix-notes-btn:disabled{ cursor: default; opacity: .6; }
+  .ix-notes-btn .ix-count{ flex: none; min-width: 18px; padding: 1px 6px; border-radius: 999px; background: var(--panel2); color: var(--muted); font-size: 11px; font-weight: 700; text-align: center; }
+  .ix-notes-btn .ix-latest{ display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+  .ix-empty{ color: var(--muted2); }
+  .ix-warn{ color: var(--warn); }
+  .ix-warn-line{ color: var(--warn); font-size: 12px; margin: 0 0 8px; }
+  .ix-list{ max-height: 46vh; overflow-y: auto; margin-bottom: 10px; }
+  .ix-notes-card .ix-list{ max-height: none; }
+  .ix-note{ border: 1px solid var(--border); border-radius: 9px; padding: 8px 10px; margin: 0 0 8px; background: var(--panel2); }
+  .ix-note-text{ white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; color: var(--text); }
+  .ix-note-meta{ display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 6px; font-size: 11px; color: var(--muted); }
+  .ix-note-del{ flex: none; background: transparent; color: var(--danger); border: 1px solid var(--border); border-radius: 7px; padding: 4px 9px; font: inherit; font-size: 11px; font-weight: 600; cursor: pointer; touch-action: manipulation; }
+  .ix-note-del.ix-armed{ background: var(--danger); border-color: var(--danger); color: #fff; }
+  .ix-note-del:disabled{ opacity: .6; cursor: default; }
+  .ix-add textarea{ width: 100%; box-sizing: border-box; min-height: 64px; resize: vertical; background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 14px; }
+  .ix-add textarea:focus{ outline: none; border-color: var(--accent); }
+  .ix-add-row{ display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+  .ix-cut-card .ix-cut-input{ width: 100%; max-width: 460px; font-size: 14px; padding: 8px 10px; }
+  .ix-cut-meta{ font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .ix-hist{ font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .ix-hist-item{ color: var(--text); }
+  /* History card (the same list as UTZLINE Projects' History) -- tap the title to open / close */
+  .ix-h-head{ display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .ix-h-toggle{ display: flex; align-items: center; gap: 8px; flex: 1; background: none; border: 0; padding: 2px 0; margin: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; touch-action: manipulation; }
+  .ix-h-toggle .section-title{ margin: 0; font-weight: 700; }
+  .ix-h-chev{ display: inline-block; width: 14px; color: var(--muted); transition: transform .15s; }
+  .ix-hist-card.ix-open .ix-h-chev{ transform: rotate(90deg); }
+  .ix-h-sub{ margin: 6px 0 8px; font-size: 12.5px; }
+  .ix-h-row{ display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); font-size: 13px; }
+  .ix-h-row:first-child{ border-top: none; }
+  .ix-h-when{ color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12.5px; }
+  .ix-h-cat{ display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 1px 7px; border-radius: 999px; margin-right: 6px; background: rgba(255,255,255,.07); color: var(--muted); vertical-align: 1px; }
+  .ix-h-cat.c-status{ background: rgba(31,143,191,.18); color: #5fb8e0; }
+  .ix-h-cat.c-edit{ background: rgba(240,178,62,.16); color: #f0b23e; }
+  .ix-h-cat.c-schedule{ background: rgba(74,144,255,.16); color: #7fb0ff; }
+  .ix-h-cat.c-rework{ background: rgba(255,93,93,.16); color: #ff8a8a; }
+  .ix-h-cat.c-created{ background: rgba(51,196,106,.16); color: #4ade80; }
+  .ix-h-cat.c-cut{ background: rgba(160,120,255,.16); color: #b89cff; }
+  .ix-h-cat.c-note{ background: rgba(255,255,255,.1); color: var(--text); }
+  .ix-h-who{ color: var(--muted); }
+  .ix-h-who b{ color: var(--text); font-weight: 600; }
+  .ix-h-detail{ margin-top: 3px; color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
+  .ix-h-detail div{ margin: 1px 0; white-space: pre-wrap; }
+  .ix-h-note{ margin-top: 8px; font-size: 12px; color: var(--warn); }
+  .ix-h-note ul{ margin: 4px 0 8px 18px; padding: 0; }
+  @media (max-width: 560px){ .ix-h-row{ grid-template-columns: minmax(0, 1fr); gap: 2px; } }
+</style>
+<script>
+/* ============================== UTZLINE item extras: cutting file + notes (2026-09-29) ==============================
+   Andrew: "schedules needs a column where a cutting filename can be pated
+   into and stored. this becomes part of the joinery summary. also a notes
+   column where notes can be added, saved, deleted one by onr". All three
+   schedules (Scheduler, Machine Schedule, Solid Surface Schedule) show and
+   edit both, in a table column each and on the joinery summary page;
+   UTZLINE Projects gets them on its next update. Shared source:
+   shared/item-extras/item-extras.{js,css}, inlined into each app.
+
+   Storage -- the family's event standard: one small immutable file per
+   change, never rewritten (so two people on two computers never fight over
+   one file), in the item's own folder:
+     <Project>/Project Saves/Joinery Cutting File/<Level> - <Room> - <Code>/
+         <name> - <YYYY-MM-DD HH-mm-ss-mmm> - cuttingfile.json
+         { kind: "cuttingFile", level, room, joineryId, fileName, by, at, app }
+         The latest one wins; fileName "" clears it. Older values are kept
+         (shown as "Before:" on the summary page).
+     <Project>/Project Saves/Joinery Notes/<Level> - <Room> - <Code>/
+         <name> - <stamp> - note.json          { kind: "note", noteId, text, ... }
+         <name> - <stamp> - note-deleted.json  { kind: "noteDeleted", noteId, ... }
+         The notes are every "note" without a later "noteDeleted".
+   Every change is signed with the device's name, like a cut or a status.
+   Reads retry twice (0.6 s, 1.5 s); an empty file (a save that never
+   finished) is ignored; writes go through the host's retrying, checked
+   writer. Folders are only read again when their file list changes. */
+(function(){
+  "use strict";
+  var SAVES = "Project Saves", BRANCH_CUT = "Joinery Cutting File", BRANCH_NOTES = "Joinery Notes";
+  var READ_RETRY = [600, 1500], STALE_MS = 15000, MAX_NAME = 260, MAX_NOTE = 2000;
+  function pause(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+  function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){ return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function isNotFound(err){ return !!(err && (err.name === "NotFoundError" || err.name === "TypeMismatchError")); }
+  function pad(n, w){ n = String(n); while (n.length < (w || 2)) n = "0" + n; return n; }
+  var lastMs = 0;
+  function uniqueNow(){ var t = Date.now(); if (t <= lastMs) t = lastMs + 1; lastMs = t; return new Date(t); }
+  function stampOf(d){ return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + pad(d.getHours()) + "-" + pad(d.getMinutes()) + "-" + pad(d.getSeconds()) + "-" + pad(d.getMilliseconds(), 3); }
+  function slug(name){ var s = String(name || "").replace(/[\\\/:*?"<>|\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim().replace(/[. ]+$/, ""); return s || "Unnamed"; }
+  function newId(){ return "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+  function whenText(iso){
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" }) + ", " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  }
+  function listDir(dirH){
+    var out = [];
+    if (!dirH || typeof dirH.values !== "function") return Promise.resolve(out);
+    var it = dirH.values();
+    function step(){ return it.next().then(function(r){ if (r.done) return out; if (r.value) out.push(r.value); return step(); }); }
+    return step();
+  }
+  // -> the parsed object, or undefined for an empty file; rejects after two retries
+  function readEvent(fh){
+    var i = 0;
+    function attempt(){
+      return fh.getFile().then(function(f){
+        if (f.size === 0) return undefined;
+        return f.text().then(function(t){
+          var v = JSON.parse(t);
+          if (!v || typeof v !== "object") throw new Error("not a UTZLINE record");
+          return v;
+        });
+      });
+    }
+    function go(){ return attempt().catch(function(err){ if (i >= READ_RETRY.length) throw err; return pause(READ_RETRY[i++]).then(go); }); }
+    return go();
+  }
+  function byTime(a, b){ return a.at < b.at ? -1 : (a.at > b.at ? 1 : ((a.__file || "") < (b.__file || "") ? -1 : 1)); }
+  function foldCutting(events){
+    var evs = events.filter(function(e){ return e && e.kind === "cuttingFile" && typeof e.at === "string"; }).sort(byTime);
+    if (!evs.length) return null;
+    var last = evs[evs.length - 1];
+    var history = [], seen = {};
+    for (var i = evs.length - 2; i >= 0 && history.length < 5; i--){
+      var e = evs[i];
+      if (!e.fileName || e.fileName === last.fileName || seen[e.fileName]) continue;
+      seen[e.fileName] = 1;
+      history.push({ fileName: e.fileName, by: e.by || "", at: e.at });
+    }
+    if (!last.fileName) return history.length ? { fileName: "", by: last.by || "", at: last.at, history: history } : null;
+    return { fileName: String(last.fileName), by: last.by || "", at: last.at, history: history };
+  }
+  function foldNotes(events){
+    var deleted = {}, notes = [];
+    events.forEach(function(e){ if (e && e.kind === "noteDeleted" && e.noteId) deleted[e.noteId] = e; });
+    events.forEach(function(e){
+      if (!e || e.kind !== "note" || !e.noteId || deleted[e.noteId] || typeof e.text !== "string") return;
+      notes.push({ id: e.noteId, text: e.text, by: e.by || "", at: e.at || "" });
+    });
+    notes.sort(function(a, b){ return a.at < b.at ? 1 : (a.at > b.at ? -1 : 0); }); // newest first
+    return notes;
+  }
+
+  /* ---- Shop drawing revisions: REV 0, then REV A, B, C ... (2026-09-29) ----
+     Andrew: "all revisions start at REV 0  Not REV A  It goes 0 A B C D E
+     etc...". A drawing's sent revisions are put in the order they were saved
+     (the saved-at in each file name; the first-day "RevA - ..." files, which
+     have none, first) and labelled by position: the first is REV 0, the
+     second REV A, then B, C ... -- whatever the file name says (files saved
+     as "REV A" when A was the first are shown as REV 0; "REV 0/1/2" numbered
+     files the same way). Nothing on disk is renamed. A returned copy carries
+     its sent revision's name token, and shows that revision's label. */
+  function revLetters(n){ var out = ""; n = Math.max(0, n | 0) + 1; while (n > 0){ var r = (n - 1) % 26; out = String.fromCharCode(65 + r) + out; n = Math.floor((n - 1) / 26); } return out; }
+  function revDisplay(i){ return "REV " + (i === 0 ? "0" : revLetters(i - 1)); }
+  function parseRevFile(name){
+    var m = /^REV ([A-Z]{1,3}|\d+) - /.exec(name), legacy = m ? null : /^Rev([A-Z]+) - /.exec(name);
+    var hit = m || legacy;
+    var raw = m ? "REV " + m[1] : (legacy ? "Rev" + legacy[1] : "REV ?");
+    var after = hit ? name.slice(hit[0].length) : name;
+    var idx = after.indexOf(" - ");
+    return { raw: raw, stamp: idx >= 0 && /^\d{4}-\d{2}-\d{2}/.test(after) ? after.slice(0, idx) : "", displayName: idx >= 0 ? after.slice(idx + 3) : after };
+  }
+  function revRawValue(raw){
+    var m = /^REV ([A-Z]{1,3})$/.exec(raw || "");
+    if (m){ var v = 0; for (var i = 0; i < m[1].length; i++) v = v * 26 + (m[1].charCodeAt(i) - 64); return v - 1; }
+    var d = /^REV (\d+)$/.exec(raw || "");
+    if (d) return parseInt(d[1], 10);
+    var l = /^Rev([A-Z]+)$/.exec(raw || "");
+    if (l){ var n = 0; for (var j = 0; j < l[1].length; j++) n = n * 26 + (l[1].charCodeAt(j) - 64); return n - 1000000; }
+    return -1;
+  }
+  // revs: [{ rawLabel, stamp, ... }] of ONE drawing -> sorted oldest first, each given .revLabel / .revIndex
+  function labelRevisions(revs){
+    revs.sort(function(a, b){
+      var as = a.stamp || "", bs = b.stamp || "";
+      if (as && bs && as !== bs) return as < bs ? -1 : 1;
+      if (!as !== !bs) return as ? 1 : -1;
+      return revRawValue(a.rawLabel) - revRawValue(b.rawLabel);
+    });
+    revs.forEach(function(r, i){ r.revLabel = revDisplay(i); r.revIndex = i; });
+    return revs;
+  }
+  // a returned copy -> the label of the sent revision it answers (same name token; the latest one saved before it)
+  function labelReturned(ret, revs){
+    var same = revs.filter(function(r){ return r.rawLabel === ret.rawLabel; });
+    if (same.length > 1 && ret.stamp){ var before = same.filter(function(r){ return !r.stamp || r.stamp <= ret.stamp; }); if (before.length) same = before; }
+    if (same.length) return same[same.length - 1].revLabel;
+    var v = revRawValue(ret.rawLabel); // a copy saved before today carries the label it had then (A = the first)
+    return v >= 0 ? revDisplay(v) : (ret.rawLabel || "REV ?");
+  }
+  var shopRevs = { letters: revLetters, display: revDisplay, parse: parseRevFile, rawValue: revRawValue, label: labelRevisions, labelReturned: labelReturned };
+
+  function create(opts){
+    var app = opts.app || "UTZLINE";
+    var toast = opts.toast || function(){};
+    var keyFor = opts.keyFor;
+    var writeFileText = opts.writeFileText;
+    var getHandle = opts.getHandle;
+    var getUser = opts.getUser || function(){ return ""; };
+    var cache = {};      // project -> { map: { key: rec }, at, loading }
+    var dirCache = {};   // project \0 branch \0 dir -> { sig, events }
+    var pending = {}, pendingTimer = 0;
+    var EMPTY = { cutting: null, notes: [], unreadable: 0 };
+
+    function ixId(project, key){ return encodeURIComponent(project + "\u0001" + key); }
+    function rowKey(row){ return keyFor(row.level, row.room, row.joineryId); }
+    function recFor(project, key){ var c = cache[project]; if (!c || !c.map) return null; return c.map[key] || EMPTY; }
+    function ensureRec(project, key){
+      var c = cache[project] || (cache[project] = { map: {}, at: 0 });
+      if (!c.map) c.map = {};
+      var r = c.map[key];
+      if (!r){ r = c.map[key] = { cutting: null, notes: [], unreadable: 0, cutEvents: [], noteEvents: [] }; }
+      return r;
+    }
+
+    // ---------- reading ----------
+    function readBranch(project, projectHandle, branch){
+      // -> { key: { events: [...], unreadable: n } }
+      return projectHandle.getDirectoryHandle(SAVES, { create: false }).then(function(ps){
+        return ps.getDirectoryHandle(branch, { create: false });
+      }).then(function(bh){
+        return listDir(bh).then(function(entries){
+          var out = {};
+          return Promise.all(entries.filter(function(e){ return e.kind === "directory"; }).map(function(dh){
+            return listDir(dh).then(function(files){
+              files = files.filter(function(f){ return f.kind === "file" && /\.json$/i.test(f.name); });
+              var sig = files.map(function(f){ return f.name; }).sort().join("\u0000");
+              var ck = project + "\u0000" + branch + "\u0000" + dh.name;
+              var hit = dirCache[ck];
+              if (hit && hit.sig === sig){ out[dh.name] = { events: hit.events, unreadable: 0 }; return; }
+              var bad = 0;
+              return Promise.all(files.map(function(f){
+                return readEvent(f).then(function(v){ if (v) v.__file = f.name; return v; }, function(){ bad++; return undefined; });
+              })).then(function(evs){
+                evs = evs.filter(Boolean);
+                if (!bad) dirCache[ck] = { sig: sig, events: evs };
+                out[dh.name] = { events: evs, unreadable: bad };
+              });
+            });
+          })).then(function(){ return out; });
+        });
+      }, function(err){
+        if (isNotFound(err)) return {};
+        return Promise.reject(err);
+      });
+    }
+    function loadProject(project, projectHandle){
+      var c = cache[project] || (cache[project] = { map: null, at: 0 });
+      if (c.loading) return c.loading;
+      c.loading = Promise.all([readBranch(project, projectHandle, BRANCH_CUT), readBranch(project, projectHandle, BRANCH_NOTES)]).then(function(r){
+        var map = {};
+        Object.keys(r[0]).forEach(function(k){
+          var m = map[k] || (map[k] = { cutting: null, notes: [], unreadable: 0, cutEvents: [], noteEvents: [] });
+          m.cutEvents = r[0][k].events; m.cutting = foldCutting(m.cutEvents); m.unreadable += r[0][k].unreadable;
+        });
+        Object.keys(r[1]).forEach(function(k){
+          var m = map[k] || (map[k] = { cutting: null, notes: [], unreadable: 0, cutEvents: [], noteEvents: [] });
+          m.noteEvents = r[1][k].events; m.notes = foldNotes(m.noteEvents); m.unreadable += r[1][k].unreadable;
+        });
+        c.map = map; c.at = Date.now(); c.loading = null;
+        return map;
+      }, function(err){ c.loading = null; throw err; });
+      return c.loading;
+    }
+
+    // ---------- table cells ----------
+    function cutCellInner(rec){
+      var loaded = !!rec;
+      var val = rec && rec.cutting ? rec.cutting.fileName : "";
+      var title = rec && rec.cutting && rec.cutting.fileName ? "Set by " + (rec.cutting.by || "?") + ", " + whenText(rec.cutting.at) : "Paste the cutting file's name here, then press Enter";
+      return "<input type=\"text\" class=\"ix-cut-input\" maxlength=\"" + MAX_NAME + "\" spellcheck=\"false\" autocomplete=\"off\" placeholder=\"" + (loaded ? "Paste file name" : "…") + "\"" + (loaded ? "" : " disabled") + " value=\"" + esc(val) + "\" title=\"" + esc(title) + "\">";
+    }
+    function notesCellInner(rec){
+      if (!rec) return "<button type=\"button\" class=\"ix-notes-btn\" disabled><span class=\"ix-empty\">…</span></button>";
+      var n = rec.notes.length;
+      var warn = rec.unreadable ? " <span class=\"ix-warn\" title=\"" + rec.unreadable + " file(s) couldn't be read just now\">⚠</span>" : "";
+      if (!n) return "<button type=\"button\" class=\"ix-notes-btn\"><span class=\"ix-empty\">+ Add note</span>" + warn + "</button>";
+      var latest = rec.notes[0];
+      return "<button type=\"button\" class=\"ix-notes-btn\" title=\"" + esc(n + " note" + (n === 1 ? "" : "s") + " — latest by " + (latest.by || "?") + ", " + whenText(latest.at)) + "\"><span class=\"ix-count\">" + n + "</span><span class=\"ix-latest\">" + esc(latest.text) + "</span>" + warn + "</button>";
+    }
+    function cellsHtml(row){
+      var rec = recFor(row.project, rowKey(row));
+      var id = ixId(row.project, rowKey(row));
+      return "<td class=\"ix-cut-cell\" data-ix=\"" + id + "\">" + cutCellInner(rec) + "</td>" +
+             "<td class=\"ix-notes-cell\" data-ix=\"" + id + "\">" + notesCellInner(rec) + "</td>";
+    }
+    function patchCells(project, key){
+      var sel = key == null ? null : ixId(project, key);
+      Array.prototype.forEach.call(document.querySelectorAll("td.ix-cut-cell[data-ix], td.ix-notes-cell[data-ix]"), function(td){
+        var id = td.getAttribute("data-ix");
+        if (sel != null && id !== sel) return;
+        var parts = decodeURIComponent(id).split("\u0001");
+        if (sel == null && parts[0] !== project) return;
+        var rec = recFor(parts[0], parts[1]);
+        if (td.classList.contains("ix-cut-cell")){
+          var input = td.querySelector("input");
+          if (input && (document.activeElement === input || input.classList.contains("ix-dirty") || input.classList.contains("ix-saving"))) return; // never under someone's typing
+          td.innerHTML = cutCellInner(rec);
+        } else {
+          td.innerHTML = notesCellInner(rec);
+        }
+      });
+      Array.prototype.forEach.call(document.querySelectorAll(".ix-cards[data-ix]"), function(box){
+        var id = box.getAttribute("data-ix");
+        if (sel != null && id !== sel) return;
+        var parts = decodeURIComponent(id).split("\u0001");
+        if (sel == null && parts[0] !== project) return;
+        if (box.__ixRefresh) box.__ixRefresh();
+      });
+      if (modal && !modal.el.hidden && modal.row && (sel == null ? modal.row.project === project : ixId(modal.row.project, rowKey(modal.row)) === sel)) renderNotesList(modal.list, modal.row);
+    }
+    function flush(){
+      pendingTimer = 0;
+      var todo = pending; pending = {};
+      Object.keys(todo).forEach(function(project){
+        var c = cache[project];
+        if (c && c.map && Date.now() - c.at < STALE_MS){ patchCells(project, null); return; }
+        Promise.resolve(getHandle(todo[project])).then(function(h){
+          if (!h) return;
+          return loadProject(project, h).then(function(){ patchCells(project, null); });
+        }).catch(function(err){ console.warn("Cutting files / notes for " + project + " couldn't be read just now:", err); });
+      });
+    }
+    function wireRow(tr, row){
+      pending[row.project] = row;
+      if (!pendingTimer) pendingTimer = setTimeout(flush, 0);
+      var cutTd = tr.querySelector("td.ix-cut-cell"), notesTd = tr.querySelector("td.ix-notes-cell");
+      if (cutTd) wireCutInput(cutTd, row);
+      if (notesTd) notesTd.addEventListener("click", function(e){
+        if (!e.target.closest(".ix-notes-btn") || e.target.closest(".ix-notes-btn").disabled) return;
+        openNotes(row);
+      });
+    }
+    function wireCutInput(host, row){
+      // delegated, so it survives the cell being re-drawn
+      function input(){ return host.querySelector(".ix-cut-input"); }
+      function saved(){ var r = recFor(row.project, rowKey(row)); return r && r.cutting ? r.cutting.fileName : ""; }
+      host.addEventListener("input", function(e){ if (e.target.classList.contains("ix-cut-input")) e.target.classList.toggle("ix-dirty", e.target.value.trim() !== saved()); });
+      host.addEventListener("paste", function(e){
+        var el = e.target;
+        if (!el.classList || !el.classList.contains("ix-cut-input")) return;
+        // a pasted name is saved straight away (after the paste lands)
+        setTimeout(function(){ if (el.value.trim() !== saved()) commit(el); }, 0);
+      });
+      host.addEventListener("keydown", function(e){
+        var el = e.target;
+        if (!el.classList || !el.classList.contains("ix-cut-input")) return;
+        if (e.key === "Enter"){ e.preventDefault(); commit(el); el.blur(); }
+        else if (e.key === "Escape"){ el.value = saved(); el.classList.remove("ix-dirty"); el.blur(); }
+      });
+      host.addEventListener("focusout", function(e){
+        var el = e.target;
+        if (el.classList && el.classList.contains("ix-cut-input") && el.value.trim() !== saved()) commit(el);
+      });
+      function commit(el){
+        if (el.classList.contains("ix-saving")) return;
+        var val = el.value.trim().slice(0, MAX_NAME);
+        if (val === saved()){ el.classList.remove("ix-dirty"); return; }
+        el.classList.add("ix-saving");
+        setCuttingFile(row, val).then(function(ok){
+          el.classList.remove("ix-saving", "ix-dirty");
+          if (!ok){ el.value = saved(); return; }
+          el.classList.add("ix-saved"); setTimeout(function(){ el.classList.remove("ix-saved"); }, 1500);
+          patchCells(row.project, rowKey(row));
+        });
+      }
+      host.__ixInput = input;
+    }
+
+    // ---------- writing ----------
+    function needUser(what){
+      var u = getUser();
+      if (u) return u;
+      toast("Set your name first (top of the Home screen) — " + what + " are signed with it.", 4500);
+      return "";
+    }
+    function itemDir(row, branch){
+      return Promise.resolve(getHandle(row)).then(function(h){
+        if (!h) throw new Error("no project folder");
+        return h.getDirectoryHandle(SAVES, { create: true }).then(function(ps){
+          return ps.getDirectoryHandle(branch, { create: true });
+        }).then(function(bh){ return bh.getDirectoryHandle(rowKey(row), { create: true }); });
+      });
+    }
+    function writeEvent(row, branch, fileKind, payload){
+      var user = payload.by;
+      var d = uniqueNow();
+      payload.at = d.toISOString();
+      payload.level = row.level || ""; payload.room = row.room || ""; payload.joineryId = row.joineryId || "";
+      payload.app = app;
+      var name = slug(user) + " - " + stampOf(d) + " - " + fileKind + ".json";
+      return itemDir(row, branch).then(function(dh){
+        return writeFileText(dh, name, JSON.stringify(payload)).then(function(){ payload.__file = name; return payload; });
+      });
+    }
+    function failToast(what, err){
+      console.error(what + " failed:", err);
+      var why = (err && (err.name === "NotAllowedError" ? "no permission to the folder" : (err.message || err.name))) || "an error";
+      toast("Couldn't save " + what + " (" + why + ") — nothing was changed. Try again.", 6000);
+    }
+    function setCuttingFile(row, fileName){
+      var user = needUser("cutting files");
+      if (!user) return Promise.resolve(false);
+      return writeEvent(row, BRANCH_CUT, "cuttingfile", { kind: "cuttingFile", fileName: fileName, by: user }).then(function(ev){
+        var r = ensureRec(row.project, rowKey(row));
+        r.cutEvents = (r.cutEvents || []).concat([ev]);
+        r.cutting = foldCutting(r.cutEvents);
+        toast(fileName ? "Cutting file saved: " + fileName : "Cutting file cleared.", 2600);
+        return true;
+      }, function(err){ failToast("the cutting file", err); return false; });
+    }
+    function addNote(row, text){
+      var user = needUser("notes");
+      if (!user) return Promise.resolve(false);
+      text = String(text || "").trim().slice(0, MAX_NOTE);
+      if (!text) return Promise.resolve(false);
+      return writeEvent(row, BRANCH_NOTES, "note", { kind: "note", noteId: newId(), text: text, by: user }).then(function(ev){
+        var r = ensureRec(row.project, rowKey(row));
+        r.noteEvents = (r.noteEvents || []).concat([ev]);
+        r.notes = foldNotes(r.noteEvents);
+        toast("Note saved.", 2000);
+        patchCells(row.project, rowKey(row));
+        return true;
+      }, function(err){ failToast("the note", err); return false; });
+    }
+    function deleteNote(row, noteId){
+      var user = needUser("notes");
+      if (!user) return Promise.resolve(false);
+      return writeEvent(row, BRANCH_NOTES, "note-deleted", { kind: "noteDeleted", noteId: noteId, by: user }).then(function(ev){
+        var r = ensureRec(row.project, rowKey(row));
+        r.noteEvents = (r.noteEvents || []).concat([ev]);
+        r.notes = foldNotes(r.noteEvents);
+        toast("Note deleted.", 2000);
+        patchCells(row.project, rowKey(row));
+        return true;
+      }, function(err){ failToast("that", err); return false; });
+    }
+
+    // ---------- notes list (dialog and summary card) ----------
+    function renderNotesList(list, row){
+      var rec = recFor(row.project, rowKey(row));
+      if (!rec){ list.innerHTML = "<p class=\"ix-empty\">Loading…</p>"; return; }
+      var html = rec.unreadable ? "<p class=\"ix-warn-line\">⚠ " + rec.unreadable + " file(s) couldn't be read just now — close and open again in a moment.</p>" : "";
+      if (!rec.notes.length) html += "<p class=\"ix-empty\">No notes yet.</p>";
+      rec.notes.forEach(function(n){
+        html += "<div class=\"ix-note\" data-note=\"" + esc(n.id) + "\"><div class=\"ix-note-text\">" + esc(n.text) + "</div>" +
+          "<div class=\"ix-note-meta\"><span>" + esc(n.by || "?") + " · " + esc(whenText(n.at)) + "</span>" +
+          "<button type=\"button\" class=\"ix-note-del\">Delete</button></div></div>";
+      });
+      list.innerHTML = html;
+    }
+    function notesBlock(row){
+      var box = document.createElement("div");
+      box.className = "ix-notes-block";
+      box.innerHTML = "<div class=\"ix-list\"></div>" +
+        "<div class=\"ix-add\"><textarea rows=\"3\" maxlength=\"" + MAX_NOTE + "\" placeholder=\"Write a note…\"></textarea>" +
+        "<div class=\"ix-add-row\"><button type=\"button\" class=\"btn ix-add-btn\" disabled>Save note</button></div></div>";
+      var list = box.querySelector(".ix-list"), ta = box.querySelector("textarea"), addBtn = box.querySelector(".ix-add-btn");
+      ta.addEventListener("input", function(){ addBtn.disabled = !ta.value.trim(); });
+      addBtn.addEventListener("click", function(){
+        if (!ta.value.trim()) return;
+        addBtn.disabled = true;
+        addNote(row, ta.value).then(function(ok){
+          if (ok) ta.value = "";
+          addBtn.disabled = !ta.value.trim();
+          renderNotesList(list, row);
+        });
+      });
+      list.addEventListener("click", function(e){
+        var btn = e.target.closest(".ix-note-del");
+        if (!btn) return;
+        var noteEl = btn.closest(".ix-note");
+        if (!btn.classList.contains("ix-armed")){
+          // one note at a time, and a second tap to be sure
+          btn.classList.add("ix-armed"); btn.textContent = "Tap again to delete";
+          setTimeout(function(){ if (btn.isConnected && !btn.disabled){ btn.classList.remove("ix-armed"); btn.textContent = "Delete"; } }, 4000);
+          return;
+        }
+        btn.disabled = true; btn.textContent = "Deleting…";
+        deleteNote(row, noteEl.getAttribute("data-note")).then(function(){ renderNotesList(list, row); });
+      });
+      renderNotesList(list, row);
+      box.__list = list;
+      return box;
+    }
+    var modal = null;
+    function openNotes(row){
+      if (!modal){
+        var el = document.createElement("div");
+        el.className = "modal-backdrop ix-modal";
+        el.hidden = true;
+        el.innerHTML = "<div class=\"modal\" role=\"dialog\" aria-modal=\"true\" style=\"max-width:520px;\"><h2 class=\"ix-title\">Notes</h2><p class=\"sub ix-sub\"></p><div class=\"ix-slot\"></div>" +
+          "<div class=\"modal-actions\"><div></div><div class=\"right\"><button type=\"button\" class=\"btn secondary ix-close\">Close</button></div></div></div>";
+        document.body.appendChild(el);
+        el.querySelector(".ix-close").addEventListener("click", closeNotes);
+        el.addEventListener("click", function(e){ if (e.target === el) closeNotes(); });
+        modal = { el: el, row: null, list: null };
+      }
+      modal.row = row;
+      modal.el.querySelector(".ix-title").textContent = "Notes — " + (row.joineryId || "(no ID)");
+      modal.el.querySelector(".ix-sub").textContent = [row.project, row.level, row.room].filter(Boolean).join(" · ");
+      var slot = modal.el.querySelector(".ix-slot");
+      slot.innerHTML = "";
+      var block = notesBlock(row);
+      slot.appendChild(block);
+      modal.list = block.__list;
+      modal.el.hidden = false;
+      var ta = block.querySelector("textarea");
+      setTimeout(function(){ try{ ta.focus(); }catch(e){} }, 50);
+    }
+    function closeNotes(){ if (modal) modal.el.hidden = true; }
+    function closeOverlay(){ if (modal && !modal.el.hidden){ closeNotes(); return true; } return false; }
+
+    // ---------- the joinery summary page: two cards after the item's own details card ----------
+    function renderItemCards(screenEl, row){
+      if (!screenEl) return;
+      var box = screenEl.querySelector(".ix-cards");
+      if (!box){
+        box = document.createElement("div");
+        box.className = "ix-cards";
+        var first = screenEl.querySelector(".card");
+        if (first && first.nextSibling) first.parentNode.insertBefore(box, first.nextSibling); else screenEl.appendChild(box);
+      }
+      box.setAttribute("data-ix", ixId(row.project, rowKey(row)));
+      box.innerHTML = "<div class=\"card ix-cut-card\"><h2 class=\"section-title\">Cutting file</h2><div class=\"ix-cut-host\"></div><div class=\"ix-cut-meta\"></div><div class=\"ix-hist\"></div></div>" +
+        "<div class=\"card ix-notes-card\"><h2 class=\"section-title\">Notes</h2><div class=\"ix-notes-slot\"></div></div>";
+      if (opts.history !== false) renderHistoryCard(box, row);
+      var host = box.querySelector(".ix-cut-host");
+      wireCutInput(host, row);
+      var block = notesBlock(row);
+      box.querySelector(".ix-notes-slot").appendChild(block);
+      function refresh(){
+        var rec = recFor(row.project, rowKey(row));
+        var input = host.querySelector(".ix-cut-input");
+        if (!input || !(document.activeElement === input || input.classList.contains("ix-dirty") || input.classList.contains("ix-saving"))) host.innerHTML = cutCellInner(rec);
+        var c = rec && rec.cutting;
+        box.querySelector(".ix-cut-meta").textContent = c && c.fileName ? "Set by " + (c.by || "?") + ", " + whenText(c.at) : (rec ? (c ? "Cleared by " + (c.by || "?") + ", " + whenText(c.at) : "Not set yet — paste the cutting file's name above.") : "Loading…");
+        var hist = box.querySelector(".ix-hist");
+        hist.innerHTML = c && c.history && c.history.length ? "Before: " + c.history.map(function(h){ return "<span class=\"ix-hist-item\">" + esc(h.fileName) + "</span> <span class=\"ix-empty\">(" + esc(h.by || "?") + ", " + esc(whenText(h.at)) + ")</span>"; }).join("; ") : "";
+        renderNotesList(block.__list, row);
+      }
+      box.__ixRefresh = refresh;
+      refresh();
+      // always read fresh for the page (cheap: unchanged folders aren't re-read)
+      Promise.resolve(getHandle(row)).then(function(h){ if (h) return loadProject(row.project, h); }).then(function(){ patchCells(row.project, rowKey(row)); }).catch(function(err){
+        console.warn("Cutting file / notes couldn't be read just now:", err);
+        box.querySelector(".ix-cut-meta").textContent = "Couldn't read the cutting file and notes just now — open this page again in a moment.";
+      });
+    }
+
+    /* ---------- History card (2026-09-29) ----------
+       Andrew, with a screenshot of UTZLINE Projects' History card: "the
+       schedules need this same history on the joinery summary. on a card that
+       you can click to expand and contract". Same list as Projects v36: every
+       edit and every step for the item, with when and who -- created /
+       imported, edits, status steps and job notes, schedule changes (incl.
+       the PC date), machining cuts, solid surface completion and schedule,
+       shop drawings sent / returned, orders, reworks, site measure saves,
+       plus the cutting file and notes. Tap the title to open or close it (kept
+       on this device); it's only read when it's open. Oldest first, or
+       "Newest first" (also kept). */
+    var HIST_OPEN_KEY = "utzline-item-history-open", HIST_ORDER_KEY = "utzline-item-history-newest";
+    function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+    function lsSet(k, v){ try{ localStorage.setItem(k, v); }catch(e){} }
+    var fmtWhen = opts.formatWhen || whenText;
+    var fmtDate = opts.formatDate || function(d){ return d || "—"; };
+    var statusLabel = opts.statusLabel || function(s){ return s; };
+    function stampToIso(stamp){
+      var m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2})-(\d{2})-(\d{2})/.exec(String(stamp || ""));
+      if (!m) return "";
+      var d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+      return isNaN(d.getTime()) ? "" : d.toISOString();
+    }
+    // every .json event in Project Saves/<branch>/<key>/ -> { events, failed: [{ name, why }] }
+    function readFolder(h, branch, key){
+      return h.getDirectoryHandle(SAVES, { create: false }).then(function(ps){ return ps.getDirectoryHandle(branch, { create: false }); })
+        .then(function(bh){ return bh.getDirectoryHandle(key, { create: false }); })
+        .then(function(dh){
+          return listDir(dh).then(function(files){
+            var out = { events: [], failed: [], branch: branch };
+            return Promise.all(files.filter(function(f){ return f.kind === "file" && /\.json$/i.test(f.name); }).map(function(f){
+              return readEvent(f).then(function(v){ if (v) out.events.push(v); }, function(err){ out.failed.push({ name: f.name, why: err instanceof SyntaxError ? "not JSON" : ((err && err.name) || "unreadable") }); });
+            })).then(function(){ return out; });
+          });
+        }, function(err){ if (isNotFound(err)) return { events: [], failed: [], branch: branch }; throw err; });
+    }
+    function histFromItem(item){
+      var out = [];
+      if (!item) return out;
+      if (item.importedFrom && item.importedFrom.at){
+        var f = item.importedFrom;
+        out.push({ at: f.at, by: f.by || "", cat: "Created", cls: "c-created", text: f.droppedOnPlan ? "Added from work order " + (item.workOrderNo || "") + " (dropped on the plan)" : "Imported from the work order report", detail: f.file ? [esc(f.file)] : [] });
+      } else if (item.createdAt){
+        out.push({ at: item.createdAt, by: item.createdBy || "", cat: "Created", cls: "c-created", text: "Added in UTZLINE Projects", detail: [] });
+      }
+      function val(field, v){ if (field === "Has Solid Surface") return v ? "Yes" : "No"; return v ? String(v) : "(blank)"; }
+      (Array.isArray(item.editHistory) ? item.editHistory : []).forEach(function(e){
+        out.push({ at: e.at || "", by: e.by || "", cat: "Edited", cls: "c-edit", text: "Details changed",
+          detail: (Array.isArray(e.changes) ? e.changes : []).map(function(c){ return "<b>" + esc(c.field) + ":</b> " + esc(val(c.field, c.from)) + " → " + esc(val(c.field, c.to)); }).concat(e.note ? [esc(e.note)] : []) });
+      });
+      return out;
+    }
+    var CUTS = { carcase: "Carcase", colourBoard: "Colour board", solidSurface: "Solid surface" };
+    function histFromEvents(branch, evs){
+      var out = [];
+      if (branch === "Joinery Status") evs.forEach(function(e){
+        if (e.kind === "status" && e.status) out.push({ at: e.at || "", by: e.by || "", cat: "Status", cls: "c-status", text: statusLabel(e.status) + (e.measureNotRequired ? " — site measure not required" : ""), detail: [] });
+        else if (e.kind === "jobNote") out.push({ at: e.at || "", by: e.by || "", cat: "Job note", cls: "", text: "Job note added", detail: [], jobNote: true });
+      });
+      else if (branch === "Joinery Schedule" || branch === "Solid Surface Schedule"){
+        var label = branch === "Joinery Schedule" ? "Schedule" : "Solid surface schedule";
+        evs.forEach(function(e){
+          if (e.kind === "clear") out.push({ at: e.at || "", by: e.by || "", cat: label, cls: "c-schedule", text: "Schedule cleared" + (e.note ? " (" + esc(e.note) + ")" : ""), detail: [] });
+          else if (e.kind === "set") out.push({ at: e.at || "", by: e.by || "", cat: label, cls: "c-schedule", text: "Required delivery " + esc(fmtDate(e.requiredDeliveryDate)) + (e.note ? " — " + esc(e.note) : ""),
+            detail: [(e.manufactureLeadTimeDays != null ? e.manufactureLeadTimeDays + " working days' lead" : "") + (e.manufactureStartDate ? ", manufacture start " + fmtDate(e.manufactureStartDate) : "")].filter(Boolean).map(esc) });
+        });
+      }
+      else if (branch === "Machining Flags") evs.forEach(function(e){
+        if (!e.cutType || !e.state) return;
+        out.push({ at: e.at || "", by: e.by || "", cat: "Machining", cls: "", text: esc(CUTS[e.cutType] || e.cutType) + " " + (e.state === "done" ? "cut" : e.state === "na" ? "not needed" : "back to not cut"), detail: [] });
+      });
+      else if (branch === "Solid Surface Completion") evs.forEach(function(e){
+        if (!e.flag || !e.state) return;
+        var what = e.flag === "completed" ? "Solid surface completed" : e.flag === "delivered" ? "Solid surface delivered" : "Solid surface " + e.flag;
+        out.push({ at: e.at || "", by: e.by || "", cat: "Solid surface", cls: "", text: esc(e.state === "pending" ? what.replace(/ (completed|delivered)$/, "") + " — back to not " + e.flag : what), detail: [] });
+      });
+      else if (branch === BRANCH_CUT) evs.forEach(function(e){
+        if (e.kind !== "cuttingFile") return;
+        out.push({ at: e.at || "", by: e.by || "", cat: "Cutting file", cls: "c-cut", text: e.fileName ? "Cutting file set" : "Cutting file cleared", detail: e.fileName ? [esc(e.fileName)] : [] });
+      });
+      else if (branch === BRANCH_NOTES){
+        var byId = {};
+        evs.forEach(function(e){ if (e.kind === "note" && e.noteId) byId[e.noteId] = e; });
+        evs.forEach(function(e){
+          if (e.kind === "note") out.push({ at: e.at || "", by: e.by || "", cat: "Note", cls: "c-note", text: "Note added", detail: [esc(e.text || "")] });
+          else if (e.kind === "noteDeleted") out.push({ at: e.at || "", by: e.by || "", cat: "Note", cls: "c-note", text: "Note deleted", detail: byId[e.noteId] ? [esc(byId[e.noteId].text || "")] : [] });
+        });
+      }
+      return out;
+    }
+    function histFromShopDrawings(h, key){
+      function readSide(f){ return readEvent(f).then(null, function(){ return null; }); }
+      function listPart(dirH){
+        return listDir(dirH).then(function(files){
+          var side = {};
+          files.forEach(function(f){ if (f.kind === "file" && /\.json$/i.test(f.name)) side[f.name.replace(/\.json$/i, "")] = f; });
+          return Promise.all(files.filter(function(f){ return f.kind === "file" && /\.pdf$/i.test(f.name); }).map(function(f){
+            var p = parseRevFile(f.name), s = side[f.name.replace(/\.pdf$/i, "")];
+            return (s ? readSide(s) : Promise.resolve(null)).then(function(info){ return { rawLabel: p.raw, stamp: p.stamp, displayName: p.displayName, info: info }; });
+          }));
+        });
+      }
+      return h.getDirectoryHandle(SAVES, { create: false }).then(function(ps){ return ps.getDirectoryHandle("Shop Drawings", { create: false }); })
+        .then(function(sd){ return sd.getDirectoryHandle(key, { create: false }); })
+        .then(function(itemDir){
+          return listDir(itemDir).then(function(groups){
+            return Promise.all(groups.filter(function(g){ return g.kind === "directory"; }).map(function(g){
+              return Promise.all([listPart(g), g.getDirectoryHandle("Returned", { create: false }).then(listPart, function(){ return []; })]).then(function(r){
+                var sent = labelRevisions(r[0]), out = [];
+                sent.forEach(function(x){ out.push({ at: (x.info && x.info.at) || stampToIso(x.stamp), by: (x.info && x.info.by) || "", cat: "Shop drawing", cls: "", text: "Sent " + x.revLabel, detail: [esc(x.displayName)] }); });
+                r[1].forEach(function(x){ out.push({ at: (x.info && x.info.at) || stampToIso(x.stamp), by: (x.info && x.info.by) || "", cat: "Shop drawing", cls: "", text: "Returned " + labelReturned(x, sent), detail: [esc(x.displayName)] }); });
+                return out;
+              });
+            }));
+          });
+        }, function(err){ if (isNotFound(err)) return []; throw err; })
+        .then(function(lists){ return [].concat.apply([], lists || []); });
+    }
+    function histFromOrders(orders){
+      var out = [];
+      (orders || []).forEach(function(o){
+        if (!o || typeof o !== "object") return;
+        var what = esc((o.typeLabel || o.type || "Order") + (o.supplier ? " — " + o.supplier : "") + (o.poNumber ? " (PO " + o.poNumber + ")" : ""));
+        if (o.attachedAt) out.push({ at: o.attachedAt, by: o.attachedBy || "", cat: "Order", cls: "", text: "Attached: " + what, detail: o.requiredByDate ? ["Required by " + esc(fmtDate(o.requiredByDate))] : [] });
+        if (o.received){
+          var at = o.receivedAt || (o.receivedDate ? o.receivedDate + "T12:00:00" : "");
+          var d = at ? new Date(at) : null;
+          out.push({ at: d && !isNaN(d.getTime()) ? d.toISOString() : "", by: o.receivedBy || "", cat: "Order", cls: "", text: "Received: " + what, detail: [], dateOnly: !o.receivedAt });
+        }
+      });
+      return out;
+    }
+    function histFromReworks(h, row){
+      var R = window.UtzRework;
+      if (!R || typeof R.listItemReworks !== "function") return Promise.resolve([]);
+      return R.listItemReworks(h, row.project, row.level || "", row.room || "", row.joineryId || "").then(function(res){
+        return Promise.all((res.rows || []).map(function(rr){
+          return R.readLog(h, rr).then(null, function(){ return []; }).then(function(evs){
+            var e = rr.entry || {};
+            var who = (e.cabinetNumber ? "Cab " + e.cabinetNumber : "Rework") + (e.text ? ": " + String(e.text).slice(0, 80) : "");
+            return R.logLines(e, evs).map(function(l){ return { at: l.at || "", by: l.by || "", cat: "Rework", cls: "c-rework", text: esc(l.what), detail: [esc(who)] }; });
+          });
+        }));
+      }).then(function(lists){ return [].concat.apply([], lists || []); });
+    }
+    function attachJobNoteNames(entries, notes){
+      var files = (notes || []).map(function(n){
+        var m = / - (\d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2})\.pdf$/i.exec(n.fileName || "");
+        return { name: n.fileName, at: m ? stampToIso(m[1]) : "", used: false };
+      });
+      entries.filter(function(e){ return e.jobNote; }).forEach(function(e){
+        var t = new Date(e.at).getTime(), best = null, bestD = Infinity;
+        files.forEach(function(f){ if (f.used || !f.at) return; var d = Math.abs(new Date(f.at).getTime() - t); if (d < bestD && d <= 180000){ best = f; bestD = d; } });
+        if (best){ best.used = true; e.detail = [esc(best.name)]; }
+      });
+      files.filter(function(f){ return !f.used; }).forEach(function(f){ entries.push({ at: f.at, by: "", cat: "Job note", cls: "", text: "Job note saved", detail: [esc(f.name)] }); });
+    }
+    function loadHistory(row){
+      return Promise.resolve(getHandle(row)).then(function(h){
+        if (!h) throw new Error("no project folder");
+        var key = rowKey(row), problems = [];
+        function whyText(w){ return w === "not JSON" ? "it isn't a UTZLINE record" : w === "NotFoundError" ? "it disappeared while reading" : "another program has it open (" + w + ")"; }
+        function soft(label, p){
+          return Promise.resolve(p).then(function(v){
+            if (v && v.failed) v.failed.forEach(function(f){ problems.push((v.branch || label) + " › “" + f.name + "” — " + whyText(f.why)); });
+            return v;
+          }, function(err){ console.error("History: reading " + label + " failed:", err); problems.push(label + " couldn't be read (" + ((err && (err.name || err.code)) || "error") + ")"); return null; });
+        }
+        var branches = ["Joinery Status", "Joinery Schedule", "Machining Flags", "Solid Surface Completion", "Solid Surface Schedule", BRANCH_CUT, BRANCH_NOTES];
+        return Promise.all(branches.map(function(b){ return soft(b, readFolder(h, b, key)); }).concat([
+          soft("shop drawings", histFromShopDrawings(h, key)),
+          soft("orders", opts.readOrders ? opts.readOrders(row, h) : []),
+          soft("reworks", histFromReworks(h, row)),
+          soft("site measures", opts.listOverlays ? opts.listOverlays(row, h) : []),
+          soft("job notes", opts.listJobNotes ? opts.listJobNotes(row, h) : [])
+        ])).then(function(r){
+          var entries = histFromItem(row.rawItem || row);
+          branches.forEach(function(b, i){ if (r[i]) entries = entries.concat(histFromEvents(b, r[i].events)); });
+          var n = branches.length;
+          entries = entries.concat(r[n] || [], histFromOrders(r[n + 1]), r[n + 2] || [],
+            (r[n + 3] || []).map(function(o){ return { at: stampToIso(o.stamp), by: o.user || "", cat: "Site measure", cls: "", text: "Site measure saved", detail: [] }; }));
+          attachJobNoteNames(entries, r[n + 4] || []);
+          return { entries: entries, problems: problems };
+        });
+      });
+    }
+    function paintHistory(list, res, onRetry){
+      var newest = lsGet(HIST_ORDER_KEY) === "1";
+      var dated = res.entries.filter(function(e){ return e.at; });
+      dated.sort(function(a, b){ return String(a.at).localeCompare(String(b.at)); });
+      if (newest) dated.reverse();
+      var all = dated.concat(res.entries.filter(function(e){ return !e.at; }));
+      var html = all.length ? "" : "<p class=\"ix-empty\" style=\"margin:0;\">Nothing recorded for this item yet.</p>";
+      all.forEach(function(e){
+        var when = e.at ? (e.dateOnly ? String(e.at).slice(0, 10) : fmtWhen(e.at)) : "—";
+        var detail = (e.detail || []).map(function(d){ return "<div>" + d + "</div>"; }).join("");
+        html += "<div class=\"ix-h-row\"><div class=\"ix-h-when\">" + esc(when) + "</div><div class=\"ix-h-body\"><span class=\"ix-h-cat " + (e.cls || "") + "\">" + esc(e.cat) + "</span>" + e.text +
+          " <span class=\"ix-h-who\">— " + (e.by ? "<b>" + esc(e.by) + "</b>" : "not recorded") + "</span>" + (detail ? "<div class=\"ix-h-detail\">" + detail + "</div>" : "") + "</div></div>";
+      });
+      if (res.problems.length){
+        html += "<div class=\"ix-h-note\"><div>" + (res.problems.length === 1 ? "One file couldn't be read, so it isn't in this list:" : res.problems.length + " files couldn't be read, so they aren't in this list:") + "</div><ul>" +
+          res.problems.map(function(t){ return "<li>" + esc(t) + "</li>"; }).join("") + "</ul><button type=\"button\" class=\"btn secondary sm ix-h-again\">Try again</button></div>";
+      }
+      list.innerHTML = html;
+      var again = list.querySelector(".ix-h-again");
+      if (again) again.addEventListener("click", onRetry);
+    }
+    function renderHistoryCard(box, row){
+      var card = document.createElement("div");
+      card.className = "card ix-hist-card";
+      card.innerHTML = "<div class=\"ix-h-head\"><button type=\"button\" class=\"ix-h-toggle\" aria-expanded=\"false\"><span class=\"ix-h-chev\">▸</span><span class=\"section-title\">History</span></button>" +
+        "<button type=\"button\" class=\"btn secondary sm ix-h-order\" hidden></button></div>" +
+        "<div class=\"ix-h-panel\" hidden><p class=\"sub ix-h-sub\">Every edit and every step for this item, with when and who.</p><div class=\"ix-h-list\"><p class=\"ix-empty\" style=\"margin:0;\">Loading…</p></div></div>";
+      box.appendChild(card);
+      var toggle = card.querySelector(".ix-h-toggle"), panel = card.querySelector(".ix-h-panel"), list = card.querySelector(".ix-h-list"), orderBtn = card.querySelector(".ix-h-order");
+      var last = null, loading = false;
+      function syncOrder(){ orderBtn.textContent = lsGet(HIST_ORDER_KEY) === "1" ? "Oldest first" : "Newest first"; }
+      function load(){
+        if (loading) return;
+        loading = true;
+        list.innerHTML = "<p class=\"ix-empty\" style=\"margin:0;\">Loading…</p>";
+        loadHistory(row).then(function(res){ last = res; loading = false; if (card.isConnected) paintHistory(list, res, load); }, function(err){
+          loading = false;
+          console.error("History failed:", err);
+          list.innerHTML = "<p class=\"ix-warn-line\">Couldn't read this item's history just now.</p><button type=\"button\" class=\"btn secondary sm ix-h-again\">Try again</button>";
+          list.querySelector(".ix-h-again").addEventListener("click", load);
+        });
+      }
+      function setOpen(open, save){
+        toggle.setAttribute("aria-expanded", open ? "true" : "false");
+        card.classList.toggle("ix-open", open);
+        panel.hidden = !open; orderBtn.hidden = !open;
+        if (save) lsSet(HIST_OPEN_KEY, open ? "1" : "0");
+        if (open && !last) load();
+      }
+      toggle.addEventListener("click", function(){ setOpen(panel.hidden, true); });
+      orderBtn.addEventListener("click", function(){ lsSet(HIST_ORDER_KEY, lsGet(HIST_ORDER_KEY) === "1" ? "0" : "1"); syncOrder(); if (last) paintHistory(list, last, load); });
+      syncOrder();
+      setOpen(lsGet(HIST_OPEN_KEY) === "1", false);
+      card.__ixHistReload = function(){ last = null; if (!panel.hidden) load(); };
+      return card;
+    }
+
+    return {
+      cellsHtml: cellsHtml, wireRow: wireRow, renderItemCards: renderItemCards, closeOverlay: closeOverlay, loadHistory: loadHistory,
+      openNotes: openNotes, setCuttingFile: setCuttingFile, addNote: addNote, deleteNote: deleteNote,
+      loadProject: loadProject, recFor: recFor, _cache: cache
+    };
+  }
+  window.UtzItemExtras = { create: create, foldCutting: foldCutting, foldNotes: foldNotes, shopRevs: shopRevs, BRANCH_CUT: BRANCH_CUT, BRANCH_NOTES: BRANCH_NOTES };
+})();
+</script>
+<!-- UTZLINE-ITEM-EXTRAS END -->
 </head>
 <body>
 
@@ -955,6 +1792,8 @@
             <th data-col="status">Status</th>
             <th data-col="cutStatus">SS cut (Machine Sched.)</th>
             <th data-col="delay">Delay</th>
+            <th class="ix-th">Cutting file</th>
+            <th class="ix-th">Notes</th>
             <th></th>
           </tr>
         </thead>
@@ -1029,6 +1868,8 @@
             <th data-col="status">Status</th>
             <th data-col="cutStatus">SS cut (Machine Sched.)</th>
             <th data-col="delay">Delay</th>
+            <th class="ix-th">Cutting file</th>
+            <th class="ix-th">Notes</th>
             <th></th>
           </tr>
         </thead>
@@ -1632,6 +2473,74 @@
   function isReadFailed(err){ return !!(err && err.code === "read_failed"); }
   function pause(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
   var READ_RETRY_MS = 600;
+  // (v17) a read that fails is tried twice more: 0.6 s, then 1.5 s later (a
+  // file another program -- antivirus, a sync client, another UTZLINE app --
+  // has open for a moment usually reads fine by then). Was once, at 0.6 s.
+  var READ_RETRY_DELAYS = [600, 1500];
+  function withReadRetry(attempt){
+    var i = 0;
+    function go(){
+      return attempt().catch(function(err){
+        if (i >= READ_RETRY_DELAYS.length) throw err;
+        return pause(READ_RETRY_DELAYS[i++]).then(go);
+      });
+    }
+    return go();
+  }
+  // (v17) an empty (0-byte) event file -- a save that never finished, by any
+  // app -- holds nothing: the event readers return undefined for it and it's
+  // left out (never "couldn't be read"). Whole-file lists (joinery-items.json,
+  // a level file ...) still refuse to read as empty.
+  var EMPTY_EVENT_TEXT = "\u0000empty";
+  function dropEmptyEvents(evs){ return evs.filter(function(e){ return e !== undefined; }); }
+  /* (v17) The retrying, checked writer -- every file this app saves goes
+     through here (writeFileText is the same thing for text). The file is
+     written, read back to check its size, and the whole write is tried
+     again on ANY failure, 0.5 s and then 1.5 s later. On Windows a sync
+     client or antivirus can hold a brand-new file for a moment and the
+     write fails as it finishes -- which used to leave a 0-byte file behind
+     and an error (Projects v43's finding; the Scheduler has had this since
+     v35). */
+  var WRITE_RETRY_MS = [500, 1500];
+  /* (v17) Two saves of the SAME file name at once (a migration writing two
+     history entries stamped the same millisecond) are done one after the
+     other, in the order asked: at the same time, each one's size check saw
+     the other's bytes and they kept re-writing each other. opts.noCreate:
+     never create the file (an existing list that must not come back if it
+     was removed meanwhile). */
+  var writeChains = {};
+  function uploadWriteVerified(dirH, name, data, opts){
+    var expected = (typeof data === "string") ? new Blob([data]).size : data.size;
+    var create = !(opts && opts.noCreate);
+    function attempt(){
+      return dirH.getFileHandle(name, { create: create }).then(function(fh){
+        return fh.createWritable().then(function(w){
+          return w.write(data).then(function(){ return w.close(); });
+        }).then(function(){
+          function check(){ return fh.getFile().then(function(f){ return typeof f.size !== "number" || f.size === expected; }); }
+          return check().then(function(ok){ return ok ? true : pause(400).then(check); }).then(function(ok){
+            if (!ok) return Promise.reject(new Error("The file didn't finish writing"));
+            return fh;
+          });
+        });
+      });
+    }
+    var tries = 0;
+    function go(){
+      return attempt().catch(function(err){
+        if (tries >= WRITE_RETRY_MS.length) throw err;
+        var wait = WRITE_RETRY_MS[tries++];
+        console.warn("Saving " + name + " failed (" + ((err && (err.name || err.message)) || err) + ") — trying again in " + wait + " ms");
+        return pause(wait).then(go);
+      });
+    }
+    var run = (writeChains[name] || Promise.resolve()).catch(function(){}).then(go);
+    writeChains[name] = run;
+    function done(){ if (writeChains[name] === run) delete writeChains[name]; }
+    run.then(done, done);
+    return run;
+  }
+  function writeFileText(dirH, name, text, opts){ return uploadWriteVerified(dirH, name, String(text), opts); }
   // Resolves { found:true, value } / { found:false, value:null }; rejects
   // read_failed for anything that isn't a clean NotFound. `parse(text)`
   // turns the file's text into the resolved value and may throw (a
@@ -1650,7 +2559,7 @@
         return Promise.reject(readFailedErr(what, err));
       });
     }
-    return attempt().catch(function(){ return pause(READ_RETRY_MS).then(attempt); });
+    return withReadRetry(attempt); // (v17) two retries
   }
   // Same, for a JSON array file: resolves the array, or [] ONLY when the
   // file genuinely isn't there; a file that exists but won't parse (or
@@ -1762,9 +2671,7 @@
     var lines = [USERS_CSV_HEADER];
     rows.forEach(function(r){ lines.push([r.name, r.pin, r.showInApps]); });
     var text = csvStringifyRows(lines);
-    return projectsRootHandle.getFileHandle(USERS_CSV_NAME, { create: true }).then(function(fh){
-      return fh.createWritable();
-    }).then(function(w){ return w.write(text).then(function(){ return w.close(); }); });
+    return writeFileText(projectsRootHandle, USERS_CSV_NAME, text).then(function(){}); // (v17) retried + checked
   }
   function findUserRowCI(rows, name){
     var n = String(name || "").trim().toLowerCase();
@@ -2127,20 +3034,28 @@
   // where a fold must be complete to be trusted (the per-item main-schedule
   // prefill, which can otherwise silently offer a superseded date).
   function readJsonFileHandle(fh){
-    return fh.getFile().then(function(file){ return file.text(); }).then(function(text){
+    return fh.getFile().then(function(file){
+      if (file.size === 0) return EMPTY_EVENT_TEXT; // (v17) see dropEmptyEvents
+      return file.text();
+    }).then(function(text){
+      if (text === EMPTY_EVENT_TEXT) return undefined;
       try{ var parsed = JSON.parse(text); return (parsed && typeof parsed === "object") ? parsed : null; }catch(e){ return null; }
     }, function(){ return null; });
   }
   function readJsonFileHandleStrict(fh){
     function attempt(){
-      return fh.getFile().then(function(file){ return file.text(); }).then(function(text){
+      return fh.getFile().then(function(file){
+        if (file.size === 0) return EMPTY_EVENT_TEXT; // (v17) see dropEmptyEvents
+        return file.text();
+      }).then(function(text){
+        if (text === EMPTY_EVENT_TEXT) return undefined;
         var parsed;
         try{ parsed = JSON.parse(text); }catch(e){ return Promise.reject(readFailedErr(fh.name, e)); }
         if (!parsed || typeof parsed !== "object") return Promise.reject(readFailedErr(fh.name, new Error("not a JSON object")));
         return parsed;
       }, function(err){ return Promise.reject(isReadFailed(err) ? err : readFailedErr(fh.name, err)); });
     }
-    return attempt().catch(function(){ return pause(READ_RETRY_MS).then(attempt); });
+    return withReadRetry(attempt); // (v17) two retries
   }
   /* Folded-event cache (2026-09-25, sweep -- v6, speed). Every event file in
      "Joinery Status" / "Machining Flags" / "Joinery Schedule" is IMMUTABLE
@@ -2169,7 +3084,7 @@
           var hit = cached[dirH.name];
           if (hit && hit.sig === sig){ next[dirH.name] = hit; return hit.rec; }
           return Promise.all(handles.map(readJsonFileHandle)).then(function(events){
-            var allRead = events.every(function(e){ return e && typeof e === "object"; });
+            var allRead = events.every(function(e){ return e === undefined || (e && typeof e === "object"); }); // (v17) an empty file counts as read
             var rec = foldFn(events.filter(function(e){ return e && typeof e === "object"; }));
             if (allRead) next[dirH.name] = { sig: sig, rec: rec };
             return rec;
@@ -2247,11 +3162,7 @@
             var payload = { kind: "status", level: rec.level || "", room: rec.room || "", joineryId: rec.joineryId || "", status: h.status, by: h.by || "", at: h.at };
             var stamp = statusEventStampFromIso(h.at);
             writes.push(getJoineryStatusItemDir(projectHandle, key, true).then(function(dirH){
-              return dirH.getFileHandle(statusEventFileName(h.by, stamp, "status"), { create: true });
-            }).then(function(fh){
-              return fh.createWritable();
-            }).then(function(w){
-              return w.write(JSON.stringify(payload)).then(function(){ return w.close(); });
+              return writeFileText(dirH, statusEventFileName(h.by, stamp, "status"), JSON.stringify(payload)); // (v17) retried + checked
             }).catch(function(){}));
           });
           if (rec.jobNote){
@@ -2260,11 +3171,7 @@
             var jnPayload = { kind: "jobNote", level: rec.level || "", room: rec.room || "", joineryId: rec.joineryId || "", by: jnBy, at: jnAt };
             var jnStamp = statusEventStampFromIso(jnAt);
             writes.push(getJoineryStatusItemDir(projectHandle, key, true).then(function(dirH){
-              return dirH.getFileHandle(statusEventFileName(jnBy, jnStamp, "jobnote"), { create: true });
-            }).then(function(fh){
-              return fh.createWritable();
-            }).then(function(w){
-              return w.write(JSON.stringify(jnPayload)).then(function(){ return w.close(); });
+              return writeFileText(dirH, statusEventFileName(jnBy, jnStamp, "jobnote"), JSON.stringify(jnPayload)); // (v17) retried + checked
             }).catch(function(){}));
           }
         });
@@ -2476,11 +3383,7 @@
           };
           var stamp = statusEventStampFromIso(at);
           writes.push(getJoineryScheduleItemDir(projectHandle, key, true).then(function(dirH){
-            return dirH.getFileHandle(statusEventFileName(payload.by, stamp, "set"), { create: true });
-          }).then(function(fh){
-            return fh.createWritable();
-          }).then(function(w){
-            return w.write(JSON.stringify(payload)).then(function(){ return w.close(); });
+            return writeFileText(dirH, statusEventFileName(payload.by, stamp, "set"), JSON.stringify(payload)); // (v17) retried + checked
           }).catch(function(){}));
         });
         return Promise.all(writes);
@@ -2544,11 +3447,7 @@
     return migrateLegacyJoineryScheduleIfNeeded(projectHandle).then(function(){
       return getJoineryScheduleItemDir(projectHandle, key, true);
     }).then(function(dirH){
-      return dirH.getFileHandle(statusEventFileName(updatedBy, stamp, kind), { create: true });
-    }).then(function(fh){
-      return fh.createWritable();
-    }).then(function(w){
-      return w.write(JSON.stringify(payload)).then(function(){ return w.close(); });
+      return writeFileText(dirH, statusEventFileName(updatedBy, stamp, kind), JSON.stringify(payload)); // (v17) retried + checked
     }).then(function(){
       return foldJoinerySchedule([payload]);
     });
@@ -2643,11 +3542,7 @@
           };
           var stamp = statusEventStampFromIso(at);
           writes.push(getMainJoineryScheduleItemDir(projectHandle, key, true).then(function(dirH){
-            return dirH.getFileHandle(statusEventFileName(payload.by, stamp, "set"), { create: true });
-          }).then(function(fh){
-            return fh.createWritable();
-          }).then(function(w){
-            return w.write(JSON.stringify(payload)).then(function(){ return w.close(); });
+            return writeFileText(dirH, statusEventFileName(payload.by, stamp, "set"), JSON.stringify(payload)); // (v17) retried + checked
           }).catch(function(){}));
         });
         return Promise.all(writes);
@@ -2705,7 +3600,7 @@
       }
       return rootH.getDirectoryHandle(key, { create: false }).then(function(dirH){
         return listJsonFileHandlesIn(dirH).then(function(handles){
-          return Promise.all(handles.map(readJsonFileHandleStrict));
+          return Promise.all(handles.map(readJsonFileHandleStrict)).then(dropEmptyEvents);
         }).then(foldMainJoinerySchedule);
       }, function(err){
         if (isNotFoundErr(err)) return null;
@@ -2812,11 +3707,7 @@
             var payload = { cutType: ct, level: rec.level || "", room: rec.room || "", joineryId: rec.joineryId || "", state: cut.state, by: cut.by || "", at: cut.at || new Date(0).toISOString() };
             var stamp = statusEventStampFromIso(payload.at);
             writes.push(getMachiningFlagsItemDir(projectHandle, key, true).then(function(dirH){
-              return dirH.getFileHandle(statusEventFileName(payload.by, stamp, ct), { create: true });
-            }).then(function(fh){
-              return fh.createWritable();
-            }).then(function(w){
-              return w.write(JSON.stringify(payload)).then(function(){ return w.close(); });
+              return writeFileText(dirH, statusEventFileName(payload.by, stamp, ct), JSON.stringify(payload)); // (v17) retried + checked
             }).catch(function(){}));
           });
         });
@@ -2916,7 +3807,7 @@
   function readEventsForItemStrict(itemDirP, what){
     return itemDirP.then(function(dirH){
       return listJsonFileHandlesIn(dirH).then(function(handles){
-        return Promise.all(handles.map(readJsonFileHandleStrict));
+        return Promise.all(handles.map(readJsonFileHandleStrict)).then(dropEmptyEvents);
       });
     }, function(err){
       if (isNotFoundErr(err)) return [];
@@ -3001,11 +3892,7 @@
     var payload = { flag: flag, level: level, room: room || "", joineryId: joineryId || "", state: newState, by: updatedBy || "", at: new Date().toISOString() };
     var stamp = statusEventStampFromIso(payload.at);
     return getSolidSurfaceCompletionItemDir(projectHandle, key, true).then(function(dirH){
-      return dirH.getFileHandle(statusEventFileName(payload.by, stamp, flag), { create: true });
-    }).then(function(fh){
-      return fh.createWritable();
-    }).then(function(w){
-      return w.write(JSON.stringify(payload)).then(function(){ return w.close(); });
+      return writeFileText(dirH, statusEventFileName(payload.by, stamp, flag), JSON.stringify(payload)); // (v17) retried + checked
     }).then(function(){
       return readEventsForItemStrict(getSolidSurfaceCompletionItemDir(projectHandle, key, false), "completion events for " + key).then(function(events){
         var seen = events.some(function(e){ return e && e.flag === payload.flag && e.at === payload.at && e.state === payload.state; });
@@ -3039,11 +3926,11 @@
     var editorName = deviceUserName;
     function writeIt(){
       return setSolidSurfaceCompletionFlag(projectHandle, level, room, joineryId, flag, newState, editorName).then(function(result){
-        if (result && result.checkFailed) showToast("Saved — but this item's record couldn't be re-read just now (still syncing?). Tap Refresh in a moment.", 5000);
+        if (result && result.checkFailed) showToast("Saved — but this item's record couldn't be re-read just now. Tap Refresh in a moment.", 5000);
         return result;
       }).catch(function(err){
         console.error("Recording " + flag + " failed:", err);
-        showToast(isReadFailed(err) ? "Couldn't save: this project's Solid Surface Completion records couldn't be read (still syncing?) — try again in a moment." : "Couldn't save this — try again.");
+        showToast(isReadFailed(err) ? "Couldn't save: this project's Solid Surface Completion records couldn't be read just now — try again in a moment." : "Couldn't save this — try again.");
         return null;
       });
     }
@@ -3062,7 +3949,7 @@
       return writeIt();
     }).catch(function(err){
       console.error("PIN check failed:", err);
-      showToast(isReadFailed(err) ? "Couldn't read utzline-users.csv (still syncing?) — nothing was changed. Try again in a moment." : "Couldn't verify your PIN — try again.");
+      showToast(isReadFailed(err) ? "Couldn't read utzline-users.csv just now — nothing was changed. Try again in a moment." : "Couldn't verify your PIN — try again.");
       return null;
     });
   }
@@ -3471,7 +4358,9 @@
     if (!planSaved || !planSaved.objects) return;
     planSaved.objects.forEach(function(obj){
       if (obj.type !== "roomlink") return;
-      var r = (obj.r > 0) ? obj.r : 20;
+      // (v17) Andrew: "make the indicator dots about 20% smaller (and the
+      // icons)" -- drawn at 0.8 x (tapping still uses the full obj.r)
+      var fullR = (obj.r > 0) ? obj.r : 20, r = fullR * 0.8;
       var inScope = obj.__solidSurface !== false;
 
       var g = document.createElementNS(SVG_NS, "g");
@@ -3497,7 +4386,7 @@
       g.appendChild(dot);
 
       var labelX = (obj.label && typeof obj.label.x === "number") ? obj.label.x : obj.x;
-      var labelY = (obj.label && typeof obj.label.y === "number") ? obj.label.y : (obj.y + r + 22);
+      var labelY = (obj.label && typeof obj.label.y === "number") ? obj.label.y : (obj.y + fullR + 22);
       var labelFontSize = (obj.label && obj.label.fontSize) ? obj.label.fontSize : 22;
       var text = document.createElementNS(SVG_NS, "text");
       text.setAttribute("class", "marker-label");
@@ -3702,7 +4591,7 @@
     }).catch(function(err){
       console.error("Reading this item's status for the plan tap summary failed:", err);
       planItemsP = null;
-      showToast(isReadFailed(err) ? "Couldn't read this item's records (still syncing?) — try again." : "Couldn't read this item's status — try again.");
+      showToast(isReadFailed(err) ? "Couldn't read this item's records just now — try again." : "Couldn't read this item's status — try again.");
     });
   }
   // (2026-09-26, v8, family schema §6) Long-press (and real right-click,
@@ -3717,7 +4606,7 @@
     }).catch(function(err){
       console.error("Opening the marker menu failed:", err);
       planItemsP = null; // so the next tap re-reads rather than reusing a failed read
-      showToast(isReadFailed(err) ? "Couldn't read this item's records (still syncing?) — try again." : "Couldn't open the menu — try again.");
+      showToast(isReadFailed(err) ? "Couldn't read this item's records just now — try again." : "Couldn't open the menu — try again.");
     });
   }
   var markerMenuBackdrop = document.getElementById("markerMenuBackdrop");
@@ -3866,7 +4755,7 @@
       // "Unreadable is not empty" (2026-09-25, sweep -- v6): a level file (or
       // the items file) that exists but couldn't be read (mid-sync) says so,
       // instead of the old "No saved plan found" for a plan that's there.
-      showToast(isReadFailed(err) ? "Couldn't read this level's plan or the project's items (still syncing?) — try again." : "Couldn't open this level's plan.");
+      showToast(isReadFailed(err) ? "Couldn't read this level's plan or the project's items just now — try again." : "Couldn't open this level's plan.");
     });
   }
   function closePlanCanvas(){
@@ -3941,7 +4830,7 @@
       // always win and the main schedule is never consulted again.
       var mainPrefillPromise = existingRec ? Promise.resolve(null) : readMainScheduleRecordForItem(projectHandle, item.level, item.room, item.joineryId).catch(function(err){
         console.error("Reading the main Scheduler's date for prefill failed:", err);
-        showToast(isReadFailed(err) ? "Couldn't read the main Scheduler's delivery date for this item (still syncing?) — enter the date by hand, or try again in a moment." : "Couldn't read the main Scheduler's delivery date for this item — enter it by hand.", 4500);
+        showToast(isReadFailed(err) ? "Couldn't read the main Scheduler's delivery date for this item just now — enter the date by hand, or try again in a moment." : "Couldn't read the main Scheduler's delivery date for this item — enter it by hand.", 4500);
         return null;
       });
       return mainPrefillPromise.then(function(mainRec){
@@ -3960,7 +4849,7 @@
       });
     }, function(err){
       console.error("Reading this project's Solid Surface schedule failed:", err);
-      showToast(isReadFailed(err) ? "Couldn't read this project's Solid Surface schedule file (still syncing?) — try again before editing it." : "Couldn't open the schedule dialog — try again.");
+      showToast(isReadFailed(err) ? "Couldn't read this project's Solid Surface schedule file just now — try again before editing it." : "Couldn't open the schedule dialog — try again.");
     });
   }
   function closeScheduleModal(){
@@ -4003,7 +4892,7 @@
     }).catch(function(err){
       console.error("Saving schedule failed:", err);
       scheduleModalError.hidden = false;
-      scheduleModalError.textContent = isReadFailed(err) ? "Couldn't save: this project's Solid Surface schedule file couldn't be read (still syncing?) -- nothing was changed. Try again in a moment." : "Couldn't save this schedule -- try again.";
+      scheduleModalError.textContent = isReadFailed(err) ? "Couldn't save: this project's Solid Surface schedule file couldn't be read just now -- nothing was changed. Try again in a moment." : "Couldn't save this schedule -- try again.";
     }).then(function(){ schedSaveBtn.disabled = false; schedClearBtn.disabled = false; });
   });
   schedClearBtn.addEventListener("click", function(){
@@ -4018,7 +4907,7 @@
     }).catch(function(err){
       console.error("Clearing schedule failed:", err);
       scheduleModalError.hidden = false;
-      scheduleModalError.textContent = isReadFailed(err) ? "Couldn't clear: this project's Solid Surface schedule file couldn't be read (still syncing?) -- nothing was changed. Try again in a moment." : "Couldn't clear this schedule -- try again.";
+      scheduleModalError.textContent = isReadFailed(err) ? "Couldn't clear: this project's Solid Surface schedule file couldn't be read just now -- nothing was changed. Try again in a moment." : "Couldn't clear this schedule -- try again.";
     }).then(function(){ schedSaveBtn.disabled = false; schedClearBtn.disabled = false; });
   });
 
@@ -4119,7 +5008,7 @@
       }, function(err){
         // (2026-09-25, sweep -- v6) A verify that couldn't READ the registry
         // is not a wrong PIN -- say what actually happened.
-        if (numberpadState) numberpadShakeAndClear(isReadFailed(err) ? "Couldn't read utzline-users.csv (still syncing?) — try again." : undefined);
+        if (numberpadState) numberpadShakeAndClear(isReadFailed(err) ? "Couldn't read utzline-users.csv just now — try again." : undefined);
       });
     }
   }
@@ -4342,7 +5231,7 @@
       // so this flow never gets as far as writeUsersCsv with a list that's
       // missing everyone else's row. Say so plainly; nothing was written.
       console.error("Adding a new name/PIN failed:", err);
-      showToast(isReadFailed(err) ? "Couldn't read utzline-users.csv (still syncing?) — nothing was changed. Try again in a moment." : "Couldn't save that to utzline-users.csv.");
+      showToast(isReadFailed(err) ? "Couldn't read utzline-users.csv just now — nothing was changed. Try again in a moment." : "Couldn't save that to utzline-users.csv.");
       revertIdentitySelector(previousValue);
     });
   }
@@ -4594,6 +5483,7 @@
       // jobNote:true (see buildEnrichedRows above) -- an item with no note
       // gets no button at all, rather than a dead-end "no notes yet" dialog
       // on every single row.
+      itemExtras.cellsHtml(row) + // (v17) Cutting file + Notes
       "<td class=\"row-actions\">" +
         "<button type=\"button\" class=\"btn secondary sm open-item-btn\">Open item</button>" +
         (row.jobNote ? "<button type=\"button\" class=\"btn secondary sm jobnote-btn\">Open job note</button>" : "") +
@@ -4639,6 +5529,37 @@
       e.stopPropagation(); e.preventDefault();
     }, true);
   }
+  /* (v17) Andrew: "also make the schedules clickable to open the summary
+     like the projects page." A plain click / tap on a row opens its joinery
+     item page -- the same as a Joinery Register row in UTZLINE Projects, and
+     the same page as Open item, a long press or a right-click here. Not when
+     the click is on a button, link or field, or in a cell that does its own
+     thing on a tap (status history, Ordered, the cut / Completed / Delivered
+     buttons' cells, the row's action buttons): a near miss on a small button
+     on a tablet mustn't leave the schedule. A press that moved more than a
+     few pixels (a drag, selecting text) isn't a click, and the tap that ends
+     a long press never gets here (wireRowLongPress swallows it). */
+  /* (v17) Andrew: "schedules needs a column where a cutting filename can be
+     pated into and stored. this becomes part of the joinery summary. also a
+     notes column where notes can be added, saved, deleted one by onr". The
+     Cutting file and Notes columns, and their two cards on the joinery item
+     page -- shared code, see the UTZLINE-ITEM-EXTRAS block in the page head. */
+  var itemExtras = UtzItemExtras.create({ app: "Solid Surface Schedule", toast: showToast, keyFor: joineryItemPageKey, writeFileText: writeFileText, getHandle: ensureRowProjectHandle, getUser: function(){ return deviceUserName; },
+    // the History card (same list as UTZLINE Projects)
+    statusLabel: joineryStatusLabel, formatWhen: formatHistoryDate, formatDate: formatDateDisplay, readOrders: function(row, h){ return readSubOrdersForItem(h, row); }, listJobNotes: function(row, h){ return listJobNotes(h, joineryItemPageKey(row.level, row.room, row.joineryId)); } });
+  var ROW_CLICK_SKIP = "button, a, input, select, textarea, label, .status-cell, .ordered-cell, .cut-cell, .completion-cell, .row-actions, .ix-cut-cell, .ix-notes-cell";
+  function wireRowClick(tr, open){
+    var down = null;
+    tr.classList.add("row-open");
+    tr.addEventListener("pointerdown", function(e){ down = { x: e.clientX, y: e.clientY }; });
+    tr.addEventListener("click", function(e){
+      var t = e.target;
+      if (e.button !== undefined && e.button !== 0) return;
+      if (!t || !t.closest || t.closest(ROW_CLICK_SKIP)) return;
+      if (down && (Math.abs(e.clientX - down.x) > 8 || Math.abs(e.clientY - down.y) > 8)) return;
+      open();
+    });
+  }
   function wireRowActions(tr, row, returnScreen){
     var openItemBtn = tr.querySelector(".open-item-btn");
     var jobNoteBtn = tr.querySelector(".jobnote-btn");
@@ -4661,6 +5582,8 @@
       withHandle(function(){ openJoineryItemPage(row, returnScreen); });
     });
     wireRowLongPress(tr, function(){ withHandle(function(){ openJoineryItemPage(row, returnScreen); }); }); // v15
+    wireRowClick(tr, function(){ withHandle(function(){ openJoineryItemPage(row, returnScreen); }); }); // (v17) a plain click / tap opens it too
+    itemExtras.wireRow(tr, row); // (v17) the Cutting file + Notes cells
     if (jobNoteBtn){
       jobNoteBtn.addEventListener("click", function(){
         withHandle(function(){ openJobNoteDialogForRow(row); });
@@ -4804,6 +5727,7 @@
     joineryItemTitle.textContent = row.joineryId ? row.joineryId : "(no ID)";
     renderJoineryItemMetaGrid(row);
     showScreen("joineryItem");
+    itemExtras.renderItemCards(document.getElementById("screenJoineryItem"), row); // (v17) Cutting file + Notes cards
     renderJoineryItemSubOrders(row);
   }
   function closeJoineryItemPage(){
@@ -4926,10 +5850,8 @@
         return updated;
       });
       if (!updated) return { gone: true };
-      return res.dirH.getFileHandle(res.fileName, { create: false }).then(function(fh){
-        return fh.createWritable();
-      }).then(function(w){
-        return w.write(JSON.stringify(next, null, 2)).then(function(){ return w.close(); });
+      return res.dirH.getFileHandle(res.fileName, { create: false }).then(function(){
+        return writeFileText(res.dirH, res.fileName, JSON.stringify(next, null, 2), { noCreate: true }); // (v17) retried + checked
       }).then(function(){ return { gone: false, order: updated }; });
     });
   }
@@ -4953,7 +5875,7 @@
   function soLabelFor(o, t){ return o.typeLabel || SO_BASE_TYPE_LABELS[t] || t; }
   function subOrderWriteErrorText(err){
     return isReadFailed(err)
-      ? "Couldn't read this item's Sub Orders file (still syncing?) — nothing was changed. Try again in a moment."
+      ? "Couldn't read this item's Sub Orders file just now — nothing was changed. Try again in a moment."
       : "Couldn't update received status — try again.";
   }
   // One order row. The Received tick + date behave exactly like Sub
@@ -5062,7 +5984,7 @@
       if (activeJoineryItemRow !== row) return;
       console.error("Reading sub orders failed:", err);
       jiSubOrdersList.innerHTML = "<p class=\"jobnote-empty\">" + (isReadFailed(err)
-        ? "Couldn't read this item's sub orders (still syncing?) — reopen this item to try again."
+        ? "Couldn't read this item's sub orders just now — reopen this item to try again."
         : "Couldn't load sub orders — reopen this item to try again.") + "</p>";
     });
   }
@@ -5129,10 +6051,16 @@
   function updateStickyOffsets(tableEl){
     if (!tableEl) return;
     var heads = tableEl.querySelectorAll("thead th.sticky-col");
+    // (v17) a table drawn while its screen was hidden measures 0 wide --
+    // that would write left:0 on every frozen column, piling them up on top
+    // of each other once shown. Skip; the table's ResizeObserver (tableView)
+    // runs this again once it's on screen.
+    if (!heads.length || !heads[0].getBoundingClientRect().width) return;
+    var z = parseFloat(getComputedStyle(tableEl).zoom) || 1; // (v17) the table's zoom: measured widths are zoomed, `left` isn't
     var acc = 0;
     Array.prototype.forEach.call(heads, function(th, i){
       tableEl.style.setProperty("--sc" + i, acc + "px");
-      acc += th.getBoundingClientRect().width;
+      acc += th.getBoundingClientRect().width / z;
     });
   }
   var overallHideDelivered = hideStatusCheckbox("overallHideDelivered", "utzline-solid-surface-schedule:overall:hideDelivered");
@@ -5343,7 +6271,7 @@
         renderOverallTable();
         snapSet("overall", null, { projects: names, rows: rows.map(rowToSnapshot) });
         if (failed.length){
-          showToast("Couldn't read " + (failed.length === 1 ? "project " : "projects ") + failed.join(", ") + " (still syncing?) — showing last-known rows. Tap Refresh to try again.", 5000);
+          showToast("Couldn't read " + (failed.length === 1 ? "project " : "projects ") + failed.join(", ") + " just now — showing last-known rows. Tap Refresh to try again.", 5000);
         }
       });
     }).catch(function(err){
@@ -5517,9 +6445,9 @@
         projTable.hidden = true;
         projEmptyAll.hidden = true;
         projEmpty.hidden = false;
-        projEmpty.textContent = "Couldn't read this project's files right now (still syncing?) — tap Refresh to try again.";
+        projEmpty.textContent = "Couldn't read this project's files right now — tap Refresh to try again.";
       }
-      showToast(isReadFailed(err) ? "Couldn't read this project's schedule (a file may still be syncing) — tap Refresh to try again." : "Couldn't read this project's schedule.");
+      showToast(isReadFailed(err) ? "Couldn't read this project's schedule just now — tap Refresh to try again." : "Couldn't read this project's schedule.");
     });
   }
 
@@ -5577,6 +6505,7 @@
   // Closes the topmost open dialog/popover, if any -- true when it did (the
   // Back press is then "spent" on that, not on a screen change).
   function closeAnyOpenOverlay(){
+    if (itemExtras.closeOverlay()) return true; // (v17) the Notes dialog
     if (!statusHistoryPop.hidden){ hideStatusHistoryPop(); return true; }
     var pairs = [
       ["scheduleModalBackdrop", "schedCancelBtn"], ["jobNoteViewBackdrop", "jobNoteViewCancel"],
@@ -5744,6 +6673,66 @@
   document.getElementById("backFromOverallBtn").addEventListener("click", function(){ showScreen("home"); });
   document.getElementById("backFromProjectScheduleBtn").addEventListener("click", function(){ showScreen("home"); });
 
+
+  /* ============================== (v17) tables: pinned titles + zoom ==============================
+     Andrew: "ok the way you have made teh tables zoomable and locked the top
+     of the page is perferct, do that for all schedules" -- the same as the
+     Scheduler's (v35). See the .table-scroll CSS. tableView(box, key,
+     afterZoom): a "Text size − 100% +" bar just above the table's box; a
+     two-finger pinch on the table or Ctrl + wheel zooms too. 60%-200%, kept
+     per table (localStorage). afterZoom re-measures the frozen columns. */
+  var TV_MIN = 0.6, TV_MAX = 2, TV_KEY = "utzline-solid-surface-schedule-table-zoom";
+  function tvLoad(){ try{ var v = JSON.parse(localStorage.getItem(TV_KEY) || "{}"); return (v && typeof v === "object") ? v : {}; }catch(e){ return {}; } }
+  function tableView(box, key, afterZoom){
+    if (!box || box.__tv) return null;
+    var table = box.querySelector("table");
+    var bar = document.createElement("div");
+    bar.className = "tv-zoom";
+    bar.innerHTML = '<span>Text size</span><button type="button" class="tv-out" aria-label="Smaller">−</button><span class="tv-pct">100%</span><button type="button" class="tv-in" aria-label="Bigger">+</button>';
+    box.parentNode.insertBefore(bar, box);
+    var z = Number(tvLoad()[key]) || 1, raf = 0;
+    function apply(save){
+      z = Math.round(clamp(z, TV_MIN, TV_MAX) * 100) / 100;
+      box.style.setProperty("--tz", String(z));
+      bar.querySelector(".tv-pct").textContent = Math.round(z * 100) + "%";
+      if (save){ var all = tvLoad(); all[key] = z; try{ localStorage.setItem(TV_KEY, JSON.stringify(all)); }catch(e){} }
+      if (afterZoom) afterZoom();
+      refreshStickyHScroll();
+    }
+    function zoomTo(nz, save){
+      z = nz;
+      if (save){ apply(true); return; }
+      if (!raf) raf = requestAnimationFrame(function(){ raf = 0; apply(false); });
+    }
+    bar.querySelector(".tv-out").addEventListener("click", function(){ zoomTo(Math.round((z - 0.1) * 10) / 10, true); });
+    bar.querySelector(".tv-in").addEventListener("click", function(){ zoomTo(Math.round((z + 0.1) * 10) / 10, true); });
+    bar.querySelector(".tv-pct").addEventListener("click", function(){ zoomTo(1, true); });
+    box.addEventListener("wheel", function(e){
+      if (!e.ctrlKey) return; // a trackpad pinch arrives as Ctrl + wheel too
+      e.preventDefault();
+      zoomTo(z * Math.exp(-e.deltaY / 600), false);
+      clearTimeout(box.__tvT); box.__tvT = setTimeout(function(){ apply(true); }, 300);
+    }, { passive: false });
+    var pinch = null;
+    function dist(t){ return Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY); }
+    box.addEventListener("touchstart", function(e){ if (e.touches.length === 2) pinch = { d: dist(e.touches), z: z }; }, { passive: true });
+    box.addEventListener("touchmove", function(e){
+      if (!pinch || e.touches.length !== 2) return;
+      e.preventDefault();
+      zoomTo(pinch.z * dist(e.touches) / pinch.d, false);
+    }, { passive: false });
+    box.addEventListener("touchend", function(e){ if (pinch && e.touches.length < 2){ pinch = null; apply(true); } });
+    // the bar shows and hides with its table's box
+    new MutationObserver(function(){ bar.hidden = box.hidden; }).observe(box, { attributes: true, attributeFilter: ["hidden"] });
+    // the frozen columns are measured again whenever the table's size changes
+    // (shown after being hidden, re-drawn, zoomed)
+    if (table && afterZoom && typeof ResizeObserver === "function") new ResizeObserver(function(){ afterZoom(); }).observe(table);
+    bar.hidden = box.hidden;
+    box.__tv = { bar: bar, get: function(){ return z; }, set: function(v){ z = v; apply(true); }, table: table };
+    apply(false);
+    return box.__tv;
+  }
+
   /* ============================== boot ============================== */
   // Shared by both the normal path (a handle already in THIS app's own
   // database) and the one-time carry-over path (a handle just copied
@@ -5761,6 +6750,9 @@
     });
   }
   function boot(){
+    // (v17) the two schedule tables: pinned titles + zoom
+    tableView(document.getElementById("overallTableCard"), "overall", function(){ if (overallTable && !overallTable.hidden) updateStickyOffsets(overallTable); });
+    tableView(projTable ? projTable.parentNode : null, "project", function(){ if (projTable && !projTable.hidden) updateStickyOffsets(projTable); });
     if (typeof window.showDirectoryPicker !== "function"){
       setupError.hidden = false;
       setupError.textContent = "This browser doesn't support the File System Access API that UTZLINE Solid Surface Schedule needs. Use an up-to-date Chrome/Edge, or the installed app.";
@@ -5807,6 +6799,8 @@
   // window.showDirectoryPicker fake), without needing a real browser
   // right-click/long-press gesture for every scenario.
   window.__testHooks = {
+    itemExtrasForTest: function(){ return itemExtras; }, // (Cutting file + Notes)
+    setUserForItemExtrasTest: function(n){ deviceUserName = n || ""; },
     refreshStickyHScroll: refreshStickyHScroll,
     findActiveTableScroll: findActiveTableScroll,
     // 2026-09-27, company logo read-only preview -- a minimal fake

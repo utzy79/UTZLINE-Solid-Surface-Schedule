@@ -1,8 +1,23 @@
 # UTZLINE Solid Surface Schedule — installable app
 
-**Current version: v16 (RC 1.0)** (its own independent version line, separate from
+**Current version: v17 (RC 1.0)** (its own independent version line, separate from
 every other app in the family — bump this line, and add a dated entry
 below, every time a new build ships.)
+
+**v17 (2026-09-29) — RC 1.0: click a row to open its item; Cutting file and Notes columns; pinned, zoomable tables; smaller markers; saves retried.**
+
+- **Cutting file and Notes columns, and on the joinery summary page.** Andrew: *"schedules needs a column where a cutting filename can be pated into and stored. this becomes part of the joinery summary. also a notes column where notes can be added, saved, deleted one by onr"*. All three schedules have both, and they share the same records, so what's entered in one shows in the others (Projects gets them on its next update).
+  - **Cutting file:** paste the file name into the box in the row and it saves straight away; or type it and press Enter. Clear it and press Enter to remove it. The summary page shows who set it and when, and the names it had before.
+  - **Notes:** tap the Notes cell (count + latest note) to open the item's notes: write one, **Save note**; each note has its own **Delete** (tap twice). The summary page has the same Notes card.
+  - Both are signed with the device's name, like a cut or a status. Storage follows the family's event rule — one small file per change, never rewritten: `Project Saves/Joinery Cutting File/<Level> - <Room> - <Code>/` and `Project Saves/Joinery Notes/<Level> - <Room> - <Code>/`. Shared code: `shared/item-extras/`.
+- **Click a row to open its item.** Andrew: *"also make the schedules clickable to open the summary like the projects page."* A plain click or tap anywhere on a row opens that item's page, the same as a row in the Projects Joinery Register (and the same page as Open item, a long press or a right-click). Clicks on buttons, and in the cells that do their own thing on a tap (Status history, Ordered, the cut / Completed / Delivered buttons, the action buttons), still do only that. A drag doesn't count as a click.
+- **Tables: titles always visible, and zoomable** — the Scheduler's, which Andrew liked: *"ok the way you have made teh tables zoomable and locked the top of the page is perferct, do that for all schedules"*.
+  - Both tables scroll inside their own box, up to the screen's height. The column titles stay pinned while the rows scroll under them; the frozen columns' titles are pinned both ways.
+  - **Text size − 100% +** above each table zooms the whole table (text, buttons and all), 60–200%. Tap the % to go back to 100%. A two-finger pinch, or Ctrl + mouse wheel, zooms too. The size is kept per table on this device.
+- **Plan markers 20% smaller.** Andrew: *"make the indicator dots about 20% smaller (and the icons)"*. Drawn at 0.8 × their saved size, the same as every other app; tapping still uses the full size.
+- **Every save is retried and checked.** Each file is read back after it's written, and a failed or short write is tried again 0.5 s and 1.5 s later. On Windows, a sync client or antivirus holding a brand-new file for a moment used to fail the save and leave an empty file behind.
+- **Reads are retried twice** (0.6 s and 1.5 s, was once), and an empty event file — a save that never finished — is ignored instead of making the item "unreadable".
+- **No "still syncing?" guesses.** It was usually wrong. Messages now say "couldn't read … just now".
 
 **v16 (2026-09-29) — RC 1.0.** Andrew: *"ok, now change them all to version RC 1.0. and have that on the logos (small)"*.
 

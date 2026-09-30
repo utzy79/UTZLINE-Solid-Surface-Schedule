@@ -246,7 +246,8 @@ var ICON_VERSION = "v1";
 // v14 (2026-09-27): "Schedule Backups" folder hidden from the project list.
 // v15 (2026-09-28): long press on a row opens its joinery item page.
 // v16 (2026-09-29): RC 1.0 -- the version is shown as RC 1.0, with a small "RC 1.0" tag on the logo.
-var CACHE_NAME = "utzline-solid-surface-schedule-cache-v16";
+// v17 (2026-09-29): RC 1.0 -- a click on a row opens its item page; Cutting file + Notes columns; table titles pinned + zoom; markers 20% smaller; every save retried + checked; reads retried twice; no "still syncing?" guesses.
+var CACHE_NAME = "utzline-solid-surface-schedule-cache-v17";
 
 var PRECACHE_URLS = [
   "./",

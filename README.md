@@ -1,8 +1,26 @@
 # UTZLINE Solid Surface Schedule — installable app
 
-**Current version: v18 (RC 1.0)** (its own independent version line, separate from
+**Current version: v20 (RC 1.0)** (its own independent version line, separate from
 every other app in the family — bump this line, and add a dated entry
 below, every time a new build ships.)
+
+**v20 (2026-09-30) — RC 1.0: day / night mode, the plan shows solid-surface items only (red / blue / green ✓), tick-box status filters, hide / rearrange columns, the builder's logo.**
+
+- **Day / night mode** (Andrew: *"give me day / night mode for all apps"*): a ☀ / ☾ button at the top right of every screen switches between the dark look and a new light one; with nothing chosen the app follows the device's own setting. The choice is kept per device and shared by the UTZLINE apps on it.
+- Andrew: *"solid surface schedule floor plan to only show items with solid surface"* and *"icons to match, (not started red, cut blue, completed green tick)"*: the level plan draws **only the solid-surface items**, as the shared marker (white / black rings, 25% smaller) coloured **red** until the Solid Surface cut is done in the Machine Schedule, **blue** once cut, **green with a ✓** once Completed here.
+- Andrew: *"these need to be tick boxes (drop down then tick on / off)"*: the **status filters** (Overall + project tables) are drop-downs of tick boxes -- tick any number of statuses, none ticked = all; remembered per device.
+- Andrew: *"all schedules need the option to hide, rearrange columns"*: a **Columns** button beside the Text size bar lists the table's columns -- untick to hide, ▲ ▼ to move; the frozen identity columns and the actions column stay put; remembered per device, per table.
+- **Builder's logo** beside the project's name (set up once per builder in UTZLINE Projects; the logo lives at the Projects root, the project keeps only the builder's name).
+
+**v19 (2026-09-30) — RC 1.0: sign in on open (tablets and phones), Change folder bottom right, a timer on the refresh, Overall hidden on tablets, cutting file locked with a PIN.**
+
+- Andrew: *"can you put a small timer next to the refreshing from the folder so i can see how long it took (next to items once synced)"*. While a schedule refreshes from the folder, the *refreshing from the folder…* note carries a live timer (⏱ 4.2 s); once it has synced, the item count carries how long it took (*196 items · synced in 12.4 s*) -- on the Overall schedule and on a project's schedule, and the time stays on the count when you filter.
+- Andrew: *"on next update, when opening the apps, it should as[k] for you to login, currently it just loads to the last user that was logged in, some of these tablets will have multiple users (employees)"*. **On a tablet or phone the app now asks who is using it** -- a full-screen *Who's using this?* list (every name in `utzline-users.csv`, plus *+ Add a new name…*) each time the app is opened, and again when it has been in the background for **10 minutes or more**. Tap your name and enter your 4-digit PIN on the usual numberpad. The name saved on the device is only treated as "the last person" now; if another app on the device signs in as someone else, this one asks again when it comes back to the front. **A PC is unchanged** (it keeps the last user), and the PIN numberpad, the registry and the name stamped on saves are as before.
+- Andrew: *"move the change folder to the bottom right of the page, and smaller"*. The **Change folder** control on the project list is now a small button fixed to the bottom-right corner of the screen (its tooltip keeps the full wording, *Choose a different Projects folder*) instead of a full-size button / link in the list.
+- Andrew: *"lets hide overalls on the tablets"*. On a **tablet or phone** the **Overall schedule** card on the home screen is hidden (a PC keeps it); a single project's schedule opens as before.
+- Andrew: *"once a cutting file name is pasted, lock it, can be edited with a pin"*. A saved **cutting file name is locked** (read-only, dashed box) straight after it is pasted -- in the table and on the item's summary page. Tap the **padlock** beside it, enter **your own PIN**, and the box opens for an edit (leave it unchanged and it locks again; after saving it locks again). An empty box is still open for pasting with no PIN. Every change is still a signed, dated event, with the old names kept under *Before:*.
+- Andrew, with a screenshot of the row buttons stacked one under the other and cut off at the right: *"these should not be stacked or cutoff on solid surface schedule"*. The row's buttons (Open item / Open job note / View on plan / Edit schedule) now sit in **one row**, and the bottom scroll bar can reach the **whole width** of the table (it stopped about 24 px short, so the last button was always clipped).
+
 
 **v18 (2026-09-30) — RC 1.0: records are kept one folder per level — much faster on a tablet.**
 

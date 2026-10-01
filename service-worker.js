@@ -248,7 +248,9 @@ var ICON_VERSION = "v1";
 // v16 (2026-09-29): RC 1.0 -- the version is shown as RC 1.0, with a small "RC 1.0" tag on the logo.
 // v17 (2026-09-29): RC 1.0 -- a click on a row opens its item page; Cutting file + Notes columns; table titles pinned + zoom; markers 20% smaller; every save retried + checked; reads retried twice; no "still syncing?" guesses.
 // v18 (2026-09-30): RC 1.0 -- event layout v2: status / schedule / cut / completion / cutting file / note records are one folder per LEVEL (Project Saves/UTZLINE Events/<branch>/<Level>/); old per-item folders are still read.
-var CACHE_NAME = "utzline-solid-surface-schedule-cache-v18";
+// v19 (2026-09-30): RC 1.0 -- sign in on open (tablets / phones), change-folder button, load timer.
+// v20 (2026-09-30): RC 1.0 -- day / night mode, the plan shows solid-surface items only (red / blue / green ✓), tick-box status filters, hide / rearrange columns, the builder's logo.
+var CACHE_NAME = "utzline-solid-surface-schedule-cache-v20";
 
 var PRECACHE_URLS = [
   "./",

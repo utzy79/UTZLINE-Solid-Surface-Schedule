@@ -1,8 +1,14 @@
 # UTZLINE Solid Surface Schedule — installable app
 
-**Current version: v20 (RC 1.0)** (its own independent version line, separate from
+**Current version: v21 (RC 1.0)** (its own independent version line, separate from
 every other app in the family — bump this line, and add a dated entry
 below, every time a new build ships.)
+
+**v21 (2026-10-01) — RC 1.0: Windows' 260-character path limit — records for long room names were saved empty.**
+
+- **Why:** Andrew: *"some get corrupted from the import (dont bring in the pc date for delivery), then i cant change them in the schedule"* and Set schedule's *"Couldn't save this schedule -- try again"*. Windows limits a file's full path to 260 characters. The pilot project sits in `C:\Users\andrewu\OneDrive - Metro Joinery\UTZLINE Pilot\3756 - Jones Radiology Mt Barker\` (88 characters) and a schedule record for a long room name ("G.10 - Female Amenities Staff") reached 253 in full -- Chrome writes through a `<name>.crswap` swap file (7 more), so the file was created EMPTY and the save failed. 27 of the 72 schedule files in that project's Ground Floor folder were empty; the same limit was behind the items that never took the PC date on import.
+- **Now:** a new record's name no longer repeats the level its folder already names -- `UTZLINE Events/<Branch>/<Level>/<Room> - <Code> -- <name> - <stamp> - <kind>.json` (the room-and-code part capped at 70 characters) -- which is 15-plus characters shorter; every record already on disk under the long name still reads, old and new side by side. When even that doesn't fit, the empty file is removed and the record is kept under a 9-character `~hash` name, and a banner says why. On a PC the first write to a project measures what its folder path leaves (a few empty probe files under `UTZLINE Events`, made and removed again) and the banner shows early when that is under the ~170 characters long room names need: *move the Projects folder nearer the drive root (for example `C:\UTZLINE Projects`), or shorten the project folder's name*. Nothing of Andrew's is touched or renamed.
+- **Update every device:** an app still on the previous version doesn't see records written under the new short names (the same as when the level folders came in).
 
 **v20 (2026-09-30) — RC 1.0: day / night mode, the plan shows solid-surface items only (red / blue / green ✓), tick-box status filters, hide / rearrange columns, the builder's logo.**
 

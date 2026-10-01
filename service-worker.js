@@ -250,7 +250,8 @@ var ICON_VERSION = "v1";
 // v18 (2026-09-30): RC 1.0 -- event layout v2: status / schedule / cut / completion / cutting file / note records are one folder per LEVEL (Project Saves/UTZLINE Events/<branch>/<Level>/); old per-item folders are still read.
 // v19 (2026-09-30): RC 1.0 -- sign in on open (tablets / phones), change-folder button, load timer.
 // v20 (2026-09-30): RC 1.0 -- day / night mode, the plan shows solid-surface items only (red / blue / green ✓), tick-box status filters, hide / rearrange columns, the builder's logo.
-var CACHE_NAME = "utzline-solid-surface-schedule-cache-v20";
+// v21 (2026-10-01): RC 1.0 -- Windows' 260-character path limit: shorter record names in the event store (see README)
+var CACHE_NAME = "utzline-solid-surface-schedule-cache-v21";
 
 var PRECACHE_URLS = [
   "./",

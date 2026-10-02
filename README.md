@@ -1,8 +1,26 @@
 # UTZLINE Solid Surface Schedule — installable app
 
-**Current version: v24 (RC 1.0)** (its own independent version line, separate from
+**Current version: v27 (RC 1.0)** (its own independent version line, separate from
 every other app in the family — bump this line, and add a dated entry
 below, every time a new build ships.)
+
+**v27 (2026-10-02) — RC 1.0: builder logo on the top bar, logos folder, reversed Machined.**
+
+- **Builder logo at the far right of the top bar** (Andrew: *"builder logo on the far right of the top bar"*): one logo in the header, just left of the day / night button, shown only while a project is open and the builder has a logo (it is hidden on the project list).
+- **Company and builder logos live in a `logos` folder** at the Projects root (Andrew: *"move the company and builders logos into a logos folder"*). Every app reads `logos/` first and falls back to the old root files, so nothing breaks before the move; UTZLINE Projects writes only into `logos/` and copies the root files across once (copies -- nothing is moved or deleted). `logos` is never listed as a project.
+- **Dark mode controls**: drop-downs, their open lists, text boxes and buttons that no style had touched now get a real dark background and readable text (one shared rule), and the day / night contrast was swept for white-on-pale text. The two dark-mode background variables that pointed at themselves (`--bg`, `--panel2`) are fixed.
+
+**v26 (2026-10-01) — RC 1.0: Completed / SS Delivered clear when the cut is reversed; builder logo on project rows; sign-in cover goes up first.**
+
+- **Reversing machining reverses its flags** (Andrew: *"if something is flagged as machined, but then the machining gets reversed, the flags need to be reversed also"*). Machine Schedule is the only app that writes the Solid Surface cut. When that cut is tapped back to Pending, this app's **Completed** and **SS Delivered** flags that were set **before** the reversal no longer stand: they show as Pending with a small "cut reversed by <name>, <date>" note, and the plan marker drops back from the completed tick. Derived from the two event streams -- nothing is written or deleted, the original events stay in the history -- and a flag set again after the reversal counts. (The machining-flags fold now carries `solidSurfaceReverted`; the folded cache version was bumped.) Also: the status fold understands Machine Schedule's new `statusRetract` event, so the Status column and history popup show Machined reversed.
+- Tests: `pdftest-projects/run_solid_surface_flags_reverse_with_cut.js` (new); `pdftest-projects/run_signin_cover_first.js` (new).
+- **Builder logo on the far right of each project row** on the Home list, and the header logo window stretches to the logo.
+- **Sign-in cover first** (shared sign-in module) -- see Machine Schedule v32.
+
+**v25 (2026-10-01) — RC 1.0: the schedules' "Are you still there?" timeout.**
+
+- **"Are you still there?"** (Andrew: *"can we add a timeout on the schedules, that asks are you still there and closes it after inactivity"*). After **15 idle minutes** (no pointer, key, wheel, scroll or touch) a dialog asks *Are you still there?* with a 60-second countdown. **I'm here** carries on; unanswered, the app closes itself back to its start -- a tablet or phone goes back to the sign-in list, a PC reloads to the start screen. Nothing needs saving first (every change is its own file). The length is 15 minutes unless the device sets `utzline:idleMinutes` (0 = never) -- there is no settings screen for it yet. Shared module `shared/idle/idle.js` (inlined between `UTZLINE-IDLE` markers in all three schedule apps).
+- Test: `pdftest-scheduler/run_idle_timeout_and_status_col.js`.
 
 **v24 (2026-10-01) — RC 1.0: code-only file names -- joinery codes, not descriptions, in every file and folder name (path-limit round, fourth build).**
 

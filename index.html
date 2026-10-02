@@ -382,6 +382,14 @@
   /* light palette (day mode) */
   :root[data-theme="light"]{ --bg: #f2f6f8; --panel: #ffffff; --panel2: #e9f0f3; --border: #cfdde3; --text: #12212a; --muted: #5c7480; --muted2: #7f95a0; --accent-ink: #ffffff; --danger: #d43b3b; --warn: #b7791f; --ok: #1f9a4f; --utz-deep: #e3ebef; --utz-header: #ffffff; --accent: #3f4fcf; --accent-soft: #e2e5fa; }
   :root[data-theme="light"] select, :root[data-theme="light"] input, :root[data-theme="light"] textarea{ color-scheme: light; }
+  /* (2026-10-02) dark mode: a control no app style has touched gets a real dark background AND readable text (zero specificity, so every
+     app's own control styles still win). A native select's open list and its options take the page's light text colour but the browser's
+     default white background otherwise -- "white writing on a pale background, unreadable". */
+  :where(:root:not([data-theme="light"])) :where(select, option, optgroup, textarea, input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]):not([type=button]):not([type=submit])){ background-color: var(--panel2, var(--surface-2, #202020)); color: var(--text, var(--text-primary, #eee)); }
+  :where(:root:not([data-theme="light"])) :where(select, input, textarea){ color-scheme: dark; }
+  :where(:root:not([data-theme="light"])) :where(option:checked, option:hover){ background-color: var(--accent-soft, var(--surface-3, #33415c)); color: var(--text, var(--text-primary, #fff)); }
+  :where(:root:not([data-theme="light"])) :where(select:disabled, input:disabled, textarea:disabled, option:disabled){ color: var(--muted, var(--text-secondary, #9aa)); }
+  :root[data-theme="light"] .refresh-note{ color: #4d6572; } /* (2026-10-02) 2.9:1 -> 5.6:1 */
 </style>
 <!-- UTZLINE-THEME END -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -392,9 +400,9 @@
 <link rel="apple-touch-icon" href="./icons/icon-192.png">
 <style>
   :root{
-    --bg: var(--bg);
+    --bg: #0e161a;
     --panel: #142027;
-    --panel2: var(--panel2);
+    --panel2: #1a2830;
     --border: #263a44;
     --text: #eaf3f6;
     --muted: #9db3bc;
@@ -541,6 +549,9 @@
   }
   .list-item:hover{ background: var(--panel2); border-color: var(--accent); }
   .list-item .chev{ color: var(--muted2); }
+  .list-item img.utz-row-logo{ height: 28px; width: auto; max-width: 160px; flex: 0 0 auto; margin-left: auto; object-fit: contain; background: #fff; border-radius: 4px; padding: 2px; }
+  .list-item img.utz-row-logo[hidden]{ display: none; }
+  .list-item img.utz-row-logo + .chev{ margin-left: 0; }
   .empty-note{ color: var(--muted); font-size: 14px; padding: 18px 4px; text-align: center; }
   .section-title{ font-size: 15px; margin: 0 0 8px; }
   .hero-card{
@@ -2908,6 +2919,8 @@
       S.locked = !ok;
       S.staleName = ok ? "" : savedName;
       writeSession({ name: ok ? savedName : "", hiddenAt: 0 });
+      if (ok && S.holding) hideGate();                 // already signed in on this visit: no cover after all
+      else if (!ok) drawHold();                        // (no-op when the early cover is already up)
     }
     if (S.locked && (savedName === S.staleName) && savedName !== S.pendingName) return "";
     return savedName;
@@ -2946,6 +2959,11 @@
       var np = document.getElementById("numberpadBackdrop");
       (np && np.parentNode ? np.parentNode : document.body).appendChild(g);
       S.gate = g;
+    } else if (S.holding){
+      // the early "Opening..." cover becomes the names list: move it next to the app's own dialogs (see above)
+      var np2 = document.getElementById("numberpadBackdrop");
+      if (np2 && np2.parentNode && S.gate.parentNode !== np2.parentNode) np2.parentNode.appendChild(S.gate);
+      S.gate.setAttribute("aria-label", "Sign in"); S.holding = false;
     }
     var g2 = S.gate;
     g2.innerHTML = "";
@@ -2971,7 +2989,26 @@
   function hideGate(){
     if (S.gate){ S.gate.hidden = true; if (S.gate.parentNode) S.gate.parentNode.removeChild(S.gate); S.gate = null; }
     document.body.classList.remove("utz-signin-on");
-    S.showing = false;
+    S.showing = false; S.holding = false;
+  }
+  /* (2026-10-01) Andrew: "the login splash screen comes up after the app has started, this could cause issues ... it opens the app, then
+     opens the user selector just after, so someone could maybe make changes before logging in." The names list can only be drawn once the
+     app has read utzline-users.csv (an async folder read), so until then the app sat there live. Now a plain "Opening..." cover goes up
+     the moment this module runs (tablets / phones, unless this is a reload of a page that is already signed in) and is swapped for the
+     names list when it arrives -- or dropped when the app is already signed in, there are no names yet, or the names list hasn't arrived in 15 s
+     (so a fault can never lock anyone out of the app). */
+  function drawHold(){
+    if (S.gate || !document.body) return;
+    ensureStyle();
+    var g = document.createElement("div");
+    g.id = "utzSignIn"; g.setAttribute("role", "dialog"); g.setAttribute("aria-modal", "true"); g.setAttribute("aria-label", "Opening");
+    var card = document.createElement("div"); card.className = "usi-card";
+    var h = document.createElement("h1"); h.textContent = "UTZLINE";
+    var p = document.createElement("p"); p.textContent = "Opening…";
+    card.appendChild(h); card.appendChild(p); g.appendChild(card);
+    document.body.appendChild(g);
+    document.body.classList.add("utz-signin-on");
+    S.gate = g; S.holding = true;
   }
   function unlocked(){
     S.locked = false; S.staleName = ""; S.pendingName = "";
@@ -3046,6 +3083,20 @@
     if (document.visibilityState === "hidden") onHide(); else onShow();
   });
   window.addEventListener("pagehide", onHide);
+
+  // the early cover (see drawHold): tablets / phones only; not for a reload / back-forward of a page that is already signed in
+  (function earlyHold(){
+    if (!isLight()) return;
+    var s0 = readSession();
+    if (sameVisit() && s0 && s0.name) return;
+    if (document.body) drawHold();
+    else {
+      // this module sits in the page head: put the cover up the moment <body> exists (before the page has painted its own content)
+      try { var mo = new MutationObserver(function(){ if (document.body){ mo.disconnect(); drawHold(); } }); mo.observe(document.documentElement, { childList: true }); } catch (e) {}
+      document.addEventListener("DOMContentLoaded", drawHold);
+    }
+    setTimeout(function(){ if (S.holding) hideGate(); }, 15000);
+  })();
 
   window.UtzSignIn = {
     init: function(adapter){ A = adapter || null; if (S.booted && S.locked) check(); },
@@ -3333,10 +3384,14 @@
    Andrew: "can each project when started input the builders logo, this could be saved per builder. when
    we start a project the builder name can be a drop down with option to add new, if adding new it asks
    to drag and drop their logo. this can be used on the project headers" (screens + PDFs).
-   Kept once at the Projects ROOT (beside company-logo.png and utzline-users.csv), never per project:
-     utzline-builders.json                  { schemaVersion: 1, updatedAt, builders: [ { name, logo, addedBy, addedAt } ] }
-     utzline-builder-logo - <slug>.png      the logo (PNG, longest side <= 600 px) -- a root FILE, so no app
-                                            ever lists it as a project and no exclusion list needs changing
+   Kept once in the "logos" folder at the Projects ROOT (2026-10-02: Andrew, "move the company and builders logos
+   into a logos folder"), never per project. Readers look in logos/ FIRST and fall back to the Projects root, so
+   files an older version left at the root keep working; only UTZLINE Projects writes (always into logos/) and it
+   copies the root files across once (UtzBuilders.migrate -- copies, never moves or deletes):
+     logos/company-logo.png
+     logos/utzline-builders.json            { schemaVersion: 1, updatedAt, builders: [ { name, logo, addedBy, addedAt } ] }
+     logos/utzline-builder-logo - <slug>.png  the logo (PNG, longest side <= 600 px)
+   ("logos" is a reserved root folder name in every app, so it is never listed as a project.)
    A project only stores the builder's NAME (project-meta.json "contractor", as before); the logo is looked
    up by name (case-insensitive). Written by UTZLINE Projects only; every app reads.
      UtzBuilders.list(rootH)                      -> Promise<[{name, logo}]>   ([] when the file isn't there)
@@ -3345,7 +3400,12 @@
      UtzBuilders.logoUrl(rootH, name)             -> Promise<string|null>      (object URL, cached per root)
      UtzBuilders.logoDataUrl(rootH, name, maxPx)  -> Promise<string|null>      (for PDFs)
      UtzBuilders.contractorOf(projectH)           -> Promise<string>           (project-meta.json "contractor", "" if none)
-     UtzBuilders.mount(el, rootH, name)           -> shows the logo in/next to a header element (adds <img class="utz-builder-logo">)
+     UtzBuilders.mount(el, rootH, name)           -> shows the logo in/next to a header element (adds <img class="utz-builder-logo">);
+                                                     an element carrying data-utz-top="screenA,screenB" (the ids of the project screens)
+                                                     puts it at the FAR RIGHT OF THE TOP BAR instead (<img class="utz-top-builder"> in the
+                                                     <header>, shown only while one of those screens is up and the project has a logo)
+     UtzBuilders.logoFileHandle(rootH, name)      -> Promise<FileSystemFileHandle>  (logos/ first, then the root) -- company-logo.png etc.
+     UtzBuilders.migrate(rootH)                   -> Promise<number>           (Projects only: copies root-level logo files into logos/)
      UtzBuilders.forget(rootH)                    -> drops the caches (after a save)
    Plain ES5. */
 (function(){
@@ -3360,8 +3420,18 @@
     return h.getFileHandle(name, { create: false }).then(function(fh){ return fh.getFile(); }).then(function(f){ return f.text(); });
   }
   function notFound(err){ return !!(err && (err.name === "NotFoundError" || err.name === "TypeMismatchError")); }
+  var LOGOS = "logos";
+  function logosDir(rootH, create){
+    if (!rootH || typeof rootH.getDirectoryHandle !== "function"){ var e = new Error("no logos folder"); e.name = "NotFoundError"; return Promise.reject(e); }
+    return rootH.getDirectoryHandle(LOGOS, { create: !!create });
+  }
+  // the file `name` as a handle: logos/ first, the Projects root as the fallback (older layouts, test stand-ins)
+  function logoFileHandle(rootH, name){
+    return logosDir(rootH, false).then(function(d){ return d.getFileHandle(name, { create: false }); }).then(null, function(){ return rootH.getFileHandle(name, { create: false }); });
+  }
+  function readLogoText(rootH, name){ return logoFileHandle(rootH, name).then(function(fh){ return fh.getFile(); }).then(function(f){ return f.text(); }); }
   function readDoc(rootH){
-    return readText(rootH, FILE).then(function(t){
+    return readLogoText(rootH, FILE).then(function(t){
       var d = JSON.parse(t);
       if (!d || typeof d !== "object" || !Array.isArray(d.builders)) throw new Error("utzline-builders.json isn't the expected shape");
       d.builders = d.builders.filter(function(b){ return b && typeof b.name === "string" && b.name.trim(); });
@@ -3403,15 +3473,17 @@
     name = String(name || "").trim();
     if (!name) return Promise.reject(new Error("The builder needs a name"));
     return readDoc(rootH).then(function(d){
-      var logoName = null;
-      var p = file ? downscale(file, 600).then(function(b){ logoName = PREFIX + slug(name) + ".png"; return writeBlob(rootH, logoName, b); }) : Promise.resolve();
-      return p.then(function(){
-        var found = null;
-        d.builders.forEach(function(b){ if (norm(b.name) === norm(name)) found = b; });
-        if (!found){ found = { name: name, logo: "", addedBy: by || "", addedAt: new Date().toISOString() }; d.builders.push(found); }
-        if (logoName){ found.logo = logoName; found.logoBy = by || ""; found.logoAt = new Date().toISOString(); }
-        d.schemaVersion = 1; d.updatedAt = new Date().toISOString();
-        return writeText(rootH, FILE, JSON.stringify(d, null, 2)).then(function(){ forget(rootH); return { name: found.name, logo: found.logo || "" }; });
+      return logosDir(rootH, true).then(function(dir){
+        var logoName = null;
+        var p = file ? downscale(file, 600).then(function(b){ logoName = PREFIX + slug(name) + ".png"; return writeBlob(dir, logoName, b); }) : Promise.resolve();
+        return p.then(function(){
+          var found = null;
+          d.builders.forEach(function(b){ if (norm(b.name) === norm(name)) found = b; });
+          if (!found){ found = { name: name, logo: "", addedBy: by || "", addedAt: new Date().toISOString() }; d.builders.push(found); }
+          if (logoName){ found.logo = logoName; found.logoBy = by || ""; found.logoAt = new Date().toISOString(); }
+          d.schemaVersion = 1; d.updatedAt = new Date().toISOString();
+          return writeText(dir, FILE, JSON.stringify(d, null, 2)).then(function(){ forget(rootH); return { name: found.name, logo: found.logo || "" }; });
+        });
       });
     });
   }
@@ -3426,7 +3498,7 @@
     if (!cache[k]) cache[k] = { list: null, urls: {} };
     if (!cache[k].urls[n]) cache[k].urls[n] = entryFor(rootH, name).then(function(b){
       if (!b || !b.logo) return null;
-      return rootH.getFileHandle(b.logo, { create: false }).then(function(fh){ return fh.getFile(); }).then(function(f){
+      return logoFileHandle(rootH, b.logo).then(function(fh){ return fh.getFile(); }).then(function(f){
         if (f instanceof Blob) return URL.createObjectURL(f);
         // a stand-in file object (tests, some wrappers): build a Blob from its bytes
         return f.arrayBuffer().then(function(ab){ return URL.createObjectURL(new Blob([ab], { type: "image/png" })); });
@@ -3459,6 +3531,7 @@
   // el: a header element (or a container); the logo goes in a <img class="utz-builder-logo"> inside it (kept, updated, hidden)
   function mount(el, rootH, name){
     if (!el) return Promise.resolve(null);
+    if (el.hasAttribute && el.hasAttribute("data-utz-top")) return mountTop(el, rootH, name);
     var img = el.querySelector(":scope > img.utz-builder-logo");
     if (!img){ img = document.createElement("img"); img.className = "utz-builder-logo"; img.alt = ""; img.hidden = true; el.appendChild(img); }
     var token = (img.__utzToken = (img.__utzToken || 0) + 1);
@@ -3470,13 +3543,92 @@
       return url;
     });
   }
-  window.UtzBuilders = { FILE: FILE, PREFIX: PREFIX, list: list, add: add, setLogo: setLogo, logoUrl: logoUrl, logoDataUrl: logoDataUrl, contractorOf: contractorOf, mount: mount, forget: forget, slug: slug, downscale: downscale };
+  // ---- the logo at the far right of the top bar (2026-10-02: "builder logo on the far right of the top bar") ----
+  // one <img class="utz-top-builder"> in the app's <header> (the last flex item, just left of the day / night button);
+  // el's data-utz-top lists the ids of the project screens it belongs to -- it shows while one of them is up.
+  var watching = {};
+  function topImg(){
+    var header = document.querySelector("header");
+    if (!header) return null;
+    var img = header.querySelector(":scope > img.utz-top-builder");
+    if (!img){
+      img = document.createElement("img"); img.className = "utz-top-builder"; img.alt = ""; img.hidden = true;
+      header.insertBefore(img, header.querySelector(":scope > .utz-theme-btn"));
+    }
+    return img;
+  }
+  function screenUp(id){ var sc = document.getElementById(id); return !!(sc && !sc.hidden && sc.getClientRects().length); }
+  function refreshTop(){
+    var img = topImg();
+    if (!img) return;
+    var ids = img.__utzScreens || [], up = !ids.length;
+    for (var i = 0; i < ids.length && !up; i++) if (screenUp(ids[i])) up = true;
+    img.hidden = !(up && img.__utzName && img.getAttribute("src"));
+  }
+  function watchScreens(ids){
+    ids.forEach(function(id){
+      var sc = document.getElementById(id);
+      if (!sc || watching[id] === sc || typeof MutationObserver === "undefined") return;
+      watching[id] = sc;
+      new MutationObserver(function(){ refreshTop(); }).observe(sc, { attributes: true, attributeFilter: ["class", "hidden", "style"] });
+    });
+  }
+  function mountTop(el, rootH, name){
+    var img = topImg();
+    if (!img) return Promise.resolve(null);
+    var ids = String(el.getAttribute("data-utz-top") || "").split(/[\s,]+/).filter(Boolean);
+    img.__utzScreens = ids; watchScreens(ids);
+    var token = (img.__utzToken = (img.__utzToken || 0) + 1);
+    img.__utzName = name || "";
+    img.hidden = true;
+    if (!name){ img.removeAttribute("src"); return Promise.resolve(null); }
+    img.title = name;
+    return logoUrl(rootH, name).then(function(url){
+      if (img.__utzToken !== token) return url;
+      if (url) img.src = url; else img.removeAttribute("src");
+      refreshTop();
+      return url;
+    });
+  }
+  // Projects only: copy the logo files an older layout left at the Projects root into logos/ (copies, never moves or deletes)
+  function migrate(rootH){
+    if (!rootH || typeof rootH.values !== "function") return Promise.resolve(0);
+    var found = [], it = rootH.values();
+    function collect(){
+      return it.next().then(function(r){
+        if (r.done) return;
+        var e = r.value;
+        if (e && e.kind === "file" && (e.name === "company-logo.png" || e.name === FILE || e.name.indexOf(PREFIX) === 0)) found.push(e);
+        return collect();
+      });
+    }
+    return collect().then(function(){
+      if (!found.length) return 0;
+      return logosDir(rootH, true).then(function(dir){
+        var n = 0;
+        function next(i){
+          if (i >= found.length) return n;
+          var e = found[i];
+          return dir.getFileHandle(e.name, { create: false }).then(function(){ return next(i + 1); }, function(err){
+            if (!notFound(err)) throw err;
+            return e.getFile().then(function(f){ return writeBlob(dir, e.name, f); }).then(function(){ n++; return next(i + 1); });
+          });
+        }
+        return next(0);
+      });
+    }).then(function(n){ if (n) forget(rootH); return n; }, function(){ return 0; });
+  }
+  window.UtzBuilders = { FILE: FILE, PREFIX: PREFIX, list: list, add: add, setLogo: setLogo, logoUrl: logoUrl, logoDataUrl: logoDataUrl, contractorOf: contractorOf, mount: mount, forget: forget, slug: slug, downscale: downscale, logoFileHandle: logoFileHandle, logosDir: logosDir, migrate: migrate, LOGOS: LOGOS };
 })();
 </script>
 <style>
   /* ---- UTZLINE builder logo on project headers (2026-09-30) -- see shared/builders/builders.js ---- */
-  img.utz-builder-logo{ height: 30px; max-width: 140px; width: auto; object-fit: contain; vertical-align: middle; margin-left: 10px; border-radius: 4px; background: #fff; padding: 2px; }
+  img.utz-builder-logo{ height: 30px; max-width: 240px; width: auto; flex: 0 0 auto; box-sizing: border-box; object-fit: contain; vertical-align: middle; margin-left: 10px; border-radius: 4px; background: #fff; padding: 2px; } /* (2026-10-01) the window stretches to suit the logo, same height */
   img.utz-builder-logo[hidden]{ display: none; }
+  /* ---- the logo at the far right of the top bar (2026-10-02) ---- */
+  img.utz-top-builder{ order: 99; height: 30px; max-width: 200px; width: auto; flex: 0 0 auto; box-sizing: border-box; object-fit: contain; border-radius: 4px; background: #fff; padding: 2px; margin-left: 4px; }
+  img.utz-top-builder[hidden]{ display: none; }
+  @media (max-width: 700px){ img.utz-top-builder{ max-width: 110px; } }
 </style>
 <!-- UTZLINE-BUILDERS END -->
 <!-- UTZLINE-COLUMNS BEGIN (generated from shared/columns -- don't edit here) -->
@@ -3782,7 +3934,7 @@
   <section id="screenProjectSchedule" class="screen wide-table">
     <div class="row backrow">
       <button class="btn secondary sm" id="backFromProjectScheduleBtn">&larr; Home</button>
-      <h1 id="projectScheduleTitle" style="margin:0;">Project</h1>
+      <h1 id="projectScheduleTitle" data-utz-top="screenProjectSchedule,screenJoineryItem,screenPlanCanvas" style="margin:0;">Project</h1>
     </div>
     <div class="card row" id="levelPlanRow">
       <span class="section-title" style="margin:0;">Open a level's plan:</span>
@@ -5176,7 +5328,7 @@
     function companyLogo(){
       var root = cfg.getRootHandle && cfg.getRootHandle();
       if (!root) return Promise.resolve(null);
-      return root.getFileHandle("company-logo.png", { create: false }).then(function(fh){ return fh.getFile(); }).then(function(file){
+      return UtzBuilders.logoFileHandle(root, "company-logo.png").then(function(fh){ return fh.getFile(); }).then(function(file){
         if (!(file instanceof Blob)) return null;
         return downscaleToDataUrl(file, 500);
       }).catch(function(){ return null; });
@@ -5913,7 +6065,7 @@
      backups, kept directly in the main Projects folder -- isn't a project,
      so it's left out of the project list (the same one-line rule is in
      every app in the family). */
-  function isReservedRootFolderName(name){ return String(name || "").trim().toLowerCase() === "schedule backups"; }
+  function isReservedRootFolderName(name){ return String(name || "").trim().toLowerCase() === "schedule backups" || String(name || "").trim().toLowerCase() === "logos"; }
   function listExistingProjects(rootHandle){
     return listSubdirNames(rootHandle).then(function(names){ return names.filter(function(n){ return !isReservedRootFolderName(n); }); });
   }
@@ -6637,17 +6789,34 @@
   function foldJoineryStatusEvents(events){
     if (!events || !events.length) return null;
     var statusEvents = events.filter(function(e){ return e.kind === "status" && e.status; });
+    // (2026-10-01) Andrew: "if something is flagged as machined, but then the machining gets reversed, the flags need to be
+    // reversed also". The status pipeline is forward-only (highest rank wins), so a reversal is its OWN event, never a
+    // deleted file: { kind: "statusRetract", from: "machined", by, at } cancels every EARLIER status event of the stage it
+    // names; a stage written AFTER the reversal (the item machined again) counts normally. Apps that don't know this event
+    // yet simply ignore it (they filter on kind) and keep showing the old stage until they are updated.
+    var retractEvents = events.filter(function(e){ return e.kind === "statusRetract" && e.from; });
     var jobNoteEvents = events.filter(function(e){ return e.kind === "jobNote"; });
     if (!statusEvents.length && !jobNoteEvents.length) return null;
     var any = statusEvents[0] || jobNoteEvents[0];
     var rec = { level: any.level || "", room: any.room || "", joineryId: any.joineryId || "" };
+    function cancelled(s){
+      return retractEvents.some(function(r){ return r.from === s.status && (r.at || "") > (s.at || ""); });
+    }
     var best = null;
-    statusEvents.forEach(function(e){ if (!best || joineryStatusRank(e.status) > joineryStatusRank(best.status)) best = e; });
-    if (best){
-      rec.status = best.status; rec.updatedAt = best.at; rec.updatedBy = best.by || "";
-      rec.history = statusEvents.slice().sort(function(a, b){
+    statusEvents.forEach(function(e){
+      if (cancelled(e)) return;
+      if (!best || joineryStatusRank(e.status) > joineryStatusRank(best.status)) best = e;
+    });
+    if (statusEvents.length){
+      if (best){ rec.status = best.status; rec.updatedAt = best.at; rec.updatedBy = best.by || ""; }
+      else { rec.status = ""; rec.updatedAt = ""; rec.updatedBy = ""; }
+      rec.history = statusEvents.map(function(e){
+        var h = { status: e.status, at: e.at, by: e.by || "" };
+        if (cancelled(e)) h.cancelled = true;
+        return h;
+      }).concat(retractEvents.map(function(r){ return { status: r.from, at: r.at, by: r.by || "", reversed: true }; })).sort(function(a, b){
         return (a.at || "") < (b.at || "") ? -1 : (a.at || "") > (b.at || "") ? 1 : 0;
-      }).map(function(e){ return { status: e.status, at: e.at, by: e.by || "" }; });
+      });
     } else {
       rec.status = ""; rec.updatedAt = ""; rec.updatedBy = ""; rec.history = [];
     }
@@ -7235,8 +7404,15 @@
         rec[ct] = { state: latest.state, at: latest.at, by: latest.by || "" };
         hasAnyNonPending = true;
       }
+      // (2026-10-01) the newest "pending" event of the Solid Surface cut = the last time that cut was REVERSED (nothing else ever writes
+      // "pending"). Completed / Delivered flags set before that moment no longer stand -- see effectiveCompletionRec.
+      if (ct === "solidSurface"){
+        evs.forEach(function(e){
+          if (e.state === "pending" && (!rec.solidSurfaceReverted || (e.at || "") > (rec.solidSurfaceReverted.at || ""))) rec.solidSurfaceReverted = { at: e.at || "", by: e.by || "" };
+        });
+      }
     });
-    return hasAnyNonPending ? rec : null;
+    return (hasAnyNonPending || rec.solidSurfaceReverted) ? rec : null;
   }
   // [] only when the legacy file genuinely isn't there; read_failed for one
   // that exists but won't read -- see migrateLegacyMachiningFlagsIfNeeded.
@@ -7302,7 +7478,7 @@
       });
     }).then(function(rootH){
       if (rootH === null) return readLegacyMachiningFlagsFile(projectHandle);
-      return readFoldedEventBranch(projectHandle, rootH, machiningFlagsBranchName(), foldMachiningFlags);
+      return readFoldedEventBranch(projectHandle, rootH, machiningFlagsBranchName(), foldMachiningFlags, 2); // (2026-10-01) fold output gained solidSurfaceReverted
     }).catch(function(err){
       console.warn("machining-flags read failed (display column left blank):", err);
       return [];
@@ -7433,6 +7609,22 @@
       console.warn("Solid Surface Completion read failed (columns left at Pending):", err);
       return [];
     });
+  }
+  // (2026-10-01) Andrew: "if something is flagged as machined, but then the machining gets reversed, the flags need to be reversed also".
+  // Machine Schedule is the only app that writes the Solid Surface cut; when that cut is reversed (back to Pending) the "Completed" and
+  // "SS Delivered" flags that were set BEFORE the reversal no longer stand. Derived here from the two event streams -- nothing is written
+  // or deleted (the original events stay in the history); a flag set again AFTER the reversal counts. `reverted` = { at, by } or null.
+  // Returns { rec, dropped: { completed?: {at, by}, delivered?: {at, by} } } -- rec is null when nothing is left.
+  function effectiveCompletionRec(rec, reverted){
+    var dropped = {};
+    if (!rec || !reverted || !reverted.at) return { rec: rec || null, dropped: dropped };
+    var out = { level: rec.level, room: rec.room, joineryId: rec.joineryId }, any = false;
+    ["completed", "delivered"].forEach(function(f){
+      var v = rec[f]; if (!v) return;
+      if ((v.at || "") < reverted.at){ dropped[f] = { at: reverted.at, by: reverted.by || "" }; return; }
+      out[f] = v; any = true;
+    });
+    return { rec: any ? out : null, dropped: dropped };
   }
   function findSolidSurfaceCompletionRecord(list, level, room, joineryId){
     for (var i = 0; i < (list || []).length; i++){
@@ -7764,7 +7956,7 @@
     var hist = row.statusHistory || [];
     var rows = hist.length
       ? hist.map(function(h, i){
-          var rowHtml = "<div class=\"shp-row\"><span class=\"shp-status\">" + statusLabelHtml(h.status) + "</span><span class=\"shp-meta\">" + escapeHtml(formatHistoryDate(h.at)) + (h.by ? "<br>" + escapeHtml(h.by) : "") + "</span></div>";
+          var rowHtml = "<div class=\"shp-row\"><span class=\"shp-status\">" + (h.reversed ? statusLabelHtml(h.status) + " <em class=\"shp-rev\">reversed</em>" : (h.cancelled ? "<s>" + statusLabelHtml(h.status) + "</s>" : statusLabelHtml(h.status))) + "</span><span class=\"shp-meta\">" + escapeHtml(formatHistoryDate(h.at)) + (h.by ? "<br>" + escapeHtml(h.by) : "") + "</span></div>";
           var gapHtml = (i < hist.length - 1) ? "<div class=\"shp-gap\">" + escapeHtml(formatDaysBetween(h.at, hist[i + 1].at)) + "</div>" : "";
           return rowHtml + gapHtml;
         }).join("")
@@ -8665,7 +8857,7 @@
   var companyLogoObjectUrl = null;
   function readCompanyLogoReadOnly(){
     if (!projectsRootHandle) return Promise.resolve(null);
-    return projectsRootHandle.getFileHandle("company-logo.png", { create: false }).then(function(fh){
+    return UtzBuilders.logoFileHandle(projectsRootHandle, "company-logo.png").then(function(fh){
       return fh.getFile();
     }).then(function(file){
       return file.arrayBuffer();
@@ -8832,7 +9024,9 @@
       // Optional, read-only reference column (see readMachiningFlags'
       // own comment) -- machiningFlagsList is an optional 6th argument so
       // existing test callers that omit it still work unchanged.
-      var cutStatus = solidSurfaceCutLabel(findMachiningFlagRecord(machiningFlagsList, item.level, item.room, item.joineryId));
+      var machRec = findMachiningFlagRecord(machiningFlagsList, item.level, item.room, item.joineryId);
+      var cutStatus = solidSurfaceCutLabel(machRec);
+      var cutReverted = (machRec && machRec.solidSurfaceReverted) || null; // (2026-10-01) see effectiveCompletionRec
       // The "delivered" stage's own history entry, if the item's ever
       // reached it -- Andrew: "delivery column should have scheduled
       // delivery and actual delivery dates." Forward-only pipeline never
@@ -8855,7 +9049,8 @@
       // above (which is driven ONLY by that shared file, per schema §1's
       // "nothing here touches the shared delivered status or the existing
       // 'Actual delivery' column" instruction).
-      var completionRec = findSolidSurfaceCompletionRecord(completionList || [], item.level, item.room, item.joineryId);
+      var completionEff = effectiveCompletionRec(findSolidSurfaceCompletionRecord(completionList || [], item.level, item.room, item.joineryId), cutReverted);
+      var completionRec = completionEff.rec;
       return {
         project: projectName,
         projectHandle: projectHandle,
@@ -8875,6 +9070,8 @@
         delayKeys: delayPills.map(function(p){ return p.key; }),
         delaySeverity: delayPills.reduce(function(m, p){ return Math.max(m, p.severity); }, 0),
         completionRec: completionRec,
+        cutReverted: cutReverted,
+        completionDropped: completionEff.dropped,
         completedAt: completionRec && completionRec.completed ? completionRec.completed.at : "",
         completedBy: completionRec && completionRec.completed ? completionRec.completed.by : "",
         ssDeliveredAt: completionRec && completionRec.delivered ? completionRec.delivered.at : "",
@@ -8955,11 +9152,13 @@
   function applyCompletionChangeToRows(projectName, item, rec){
     function patch(row){
       if (row.project !== projectName || row.level !== item.level || (row.room || "") !== (item.room || "") || (row.joineryId || "") !== (item.joineryId || "")) return false;
-      row.completionRec = rec;
-      row.completedAt = rec && rec.completed ? rec.completed.at : "";
-      row.completedBy = rec && rec.completed ? rec.completed.by : "";
-      row.ssDeliveredAt = rec && rec.delivered ? rec.delivered.at : "";
-      row.ssDeliveredBy = rec && rec.delivered ? rec.delivered.by : "";
+      var eff = effectiveCompletionRec(rec, row.cutReverted); // (2026-10-01) a flag older than the cut's last reversal doesn't stand
+      var er = eff.rec; row.completionDropped = eff.dropped;
+      row.completionRec = er;
+      row.completedAt = er && er.completed ? er.completed.at : "";
+      row.completedBy = er && er.completed ? er.completed.by : "";
+      row.ssDeliveredAt = er && er.delivered ? er.delivered.at : "";
+      row.ssDeliveredBy = er && er.delivered ? er.delivered.by : "";
       return true;
     }
     var touchedOverall = false, touchedProj = false;
@@ -9012,6 +9211,10 @@
     var meta = "";
     if (done && (info.by || info.at)){
       meta = "<div class=\"cut-meta\">" + (info.by ? escapeHtml(info.by) : "") + (info.by && info.at ? ", " : "") + (info.at ? escapeHtml(formatHistoryDateOnly(info.at)) : "") + " 🔒</div>";
+    }
+    var dropped = rowLike.completionDropped && rowLike.completionDropped[flag];
+    if (!done && dropped){
+      meta = "<div class=\"cut-meta cut-reversed\" title=\"The Solid Surface cut was reversed, so this was cleared\">cut reversed" + (dropped.by ? " by " + escapeHtml(dropped.by) : "") + (dropped.at ? ", " + escapeHtml(formatHistoryDateOnly(dropped.at)) : "") + "</div>";
     }
     return "<div class=\"cut-group" + (done ? " cut-locked" : "") + "\">" +
       "<button type=\"button\" class=\"cut-btn cut-done" + (done ? " active" : "") + "\" data-flag=\"" + flag + "\"" + lockTitle + ">" + (done ? "✓ " + label : label) + "</button>" +
@@ -10229,9 +10432,28 @@
     names.forEach(function(name){
       var row = document.createElement("button");
       row.className = "list-item";
-      row.innerHTML = "<span>" + escapeHtml(name) + "</span><span class=\"chev\">&rsaquo;</span>";
+      row.innerHTML = "<span>" + escapeHtml(name) + "</span><img class=\"utz-row-logo\" alt=\"\" hidden><span class=\"chev\">&rsaquo;</span>";
       row.addEventListener("click", function(){ openProjectSchedule(name); });
       homeProjectListItems.appendChild(row);
+    });
+    fillHomeProjectLogos(names);
+  }
+  // (2026-10-01) Andrew: "builders logo to go on the far right of each project toolbar scaled to fit the toolbar". Painted after the list
+  // (never before it): each project's builder (project-meta.json "contractor") -> its logo from the Projects root (shared/builders); remembered
+  // per project for this session so a repaint shows them at once. A project with no builder / no logo reads as before.
+  var homeBuilderOf = {};
+  function fillHomeProjectLogos(names){
+    if (!window.UtzBuilders || !projectsRootHandle) return;
+    var root = projectsRootHandle;
+    var rows = homeProjectListItems.querySelectorAll(".list-item");
+    names.forEach(function(name, i){
+      var img = rows[i] && rows[i].querySelector("img.utz-row-logo"); if (!img) return;
+      function show(builder){
+        if (!builder) return;
+        UtzBuilders.logoUrl(root, builder).then(function(url){ if (url && img.isConnected){ img.src = url; img.title = builder; img.hidden = false; } }, function(){});
+      }
+      if (name in homeBuilderOf){ show(homeBuilderOf[name]); return; }
+      root.getDirectoryHandle(name).then(function(h){ return UtzBuilders.contractorOf(h); }).then(function(c){ homeBuilderOf[name] = c || ""; show(c); }, function(){});
     });
   }
   // (2026-09-25, sweep -- v6) Home paints its last-known project list from
@@ -10493,6 +10715,67 @@
 
   boot();
 })();
+</script>
+<script>
+/* UTZLINE-IDLE BEGIN -- shared/idle/idle.js (inlined into the three schedule apps; edit the shared file, then copy it between the markers) */
+/* (2026-10-01) "Are you still there?" on the schedules.
+   Andrew: "can we add a timeout on the schedules, that asks are you still
+   there and closes it after inactivity". After 15 idle minutes (no pointer,
+   key, wheel, scroll or touch) a dialog asks "Are you still there?" with a
+   60-second countdown. "I'm here" carries on. If nobody answers, the app
+   closes itself back to its start: a tablet / phone goes back to the sign-in
+   list (UtzSignIn.lock), a PC reloads to the start screen. Nothing needs
+   saving first -- every change in these apps is already its own file.
+   Length: 15 minutes unless this device sets localStorage
+   "utzline:idleMinutes" (0 = never); "utzline:idleCountdownSec" sets the
+   countdown (both exist so the behaviour can be tested quickly). */
+(function(){
+  "use strict";
+  if (window.UtzIdle) return;
+  function num(key, dflt){ try { var v = parseFloat(localStorage.getItem(key)); return isFinite(v) && v >= 0 ? v : dflt; } catch (e) { return dflt; } }
+  var idleMs = num("utzline:idleMinutes", 15) * 60000, countMs = Math.max(1, num("utzline:idleCountdownSec", 60)) * 1000;
+  var last = Date.now(), dlg = null, ticker = null, deadline = 0, fired = false;
+  function touch(){ if (!dlg) last = Date.now(); }
+  ["pointerdown", "pointermove", "keydown", "wheel", "touchstart", "scroll"].forEach(function(ev){ window.addEventListener(ev, touch, { capture: true, passive: true }); });
+  function closeApp(){
+    if (fired) return; fired = true;
+    try { if (window.UtzSignIn && UtzSignIn.isLight && UtzSignIn.isLight() && UtzSignIn.lock){ UtzSignIn.lock(); hide(); last = Date.now(); fired = false; return; } } catch (e) {}
+    try { location.reload(); } catch (e) {}
+  }
+  function hide(){ if (dlg && dlg.parentNode) dlg.parentNode.removeChild(dlg); dlg = null; }
+  function show(){
+    if (dlg) return;
+    deadline = Date.now() + countMs;
+    dlg = document.createElement("div");
+    dlg.setAttribute("role", "alertdialog"); dlg.setAttribute("aria-label", "Are you still there?");
+    dlg.style.cssText = "position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);";
+    dlg.innerHTML = "<div style=\"background:var(--panel,#1c1513);color:var(--text,#f3ecea);border:1px solid var(--border,#3a2d29);border-radius:14px;padding:22px 26px;max-width:340px;text-align:center;font:16px/1.4 system-ui,sans-serif;box-shadow:0 10px 40px rgba(0,0,0,.5);\">" +
+      "<div style=\"font-size:19px;font-weight:700;margin-bottom:8px;\">Are you still there?</div>" +
+      "<div style=\"margin-bottom:16px;opacity:.85;\">This app closes in <b data-utz-idle-n></b> s.</div>" +
+      "<button type=\"button\" data-utz-idle-ok style=\"font:inherit;font-weight:700;padding:10px 22px;border-radius:10px;border:0;background:var(--accent,#c8391c);color:#fff;cursor:pointer;\">I'm here</button></div>";
+    document.body.appendChild(dlg);
+    var n = dlg.querySelector("[data-utz-idle-n]"), ok = dlg.querySelector("[data-utz-idle-ok]");
+    n.textContent = Math.ceil(countMs / 1000);
+    ok.addEventListener("click", function(){ hide(); last = Date.now(); });
+    try { ok.focus(); } catch (e) {}
+  }
+  function tick(){
+    if (!idleMs || !document.body) return;
+    try { if (window.UtzSignIn && UtzSignIn.isLocked && UtzSignIn.isLocked()){ last = Date.now(); return; } } catch (e) {}
+    var now = Date.now(), idle = now - last;
+    if (dlg){
+      var left = deadline - now, n = dlg.querySelector("[data-utz-idle-n]");
+      if (n) n.textContent = Math.max(0, Math.ceil(left / 1000));
+      if (left <= 0) closeApp();
+      return;
+    }
+    if (idle >= idleMs + countMs) { closeApp(); return; } // the page slept past the whole wait
+    if (idle >= idleMs) show();
+  }
+  ticker = setInterval(tick, 1000);
+  window.UtzIdle = { version: 1, idleMs: idleMs, countdownMs: countMs, _tick: tick };
+})();
+/* UTZLINE-IDLE END */
 </script>
 </body>
 </html>

@@ -246,7 +246,7 @@
     ever collide on that exact triple, this app treats them as one, same
     as the Joinery Register's own status lookup already does.
 
-  Accent color for THIS FORK is indigo (#4f5fe0) -- the one hue not
+  Accent colour for THIS FORK is teal (#0b7a63 light / #1ec8a5 dark, matching the logo since v38; was indigo #4f5fe0) -- the one hue not
   already used by any sibling app (Site Measure/Viewer orange-red, Install
   ITP green, Manufacture ITP purple, Delivery ITP amber, Projects crimson,
   the main Scheduler blue, Machine Schedule teal/cyan). The original
@@ -380,7 +380,7 @@
   .utz-theme-btn:hover, .utz-theme-btn:focus{ opacity: 1; outline: none; }
   header:has(.utz-theme-btn){ padding-right: 60px; }
   /* light palette (day mode) */
-  :root[data-theme="light"]{ --bg: #f2f6f8; --panel: #ffffff; --panel2: #e9f0f3; --border: #cfdde3; --text: #12212a; --muted: #5c7480; --muted2: #7f95a0; --accent-ink: #ffffff; --danger: #d43b3b; --warn: #b7791f; --ok: #1f9a4f; --utz-deep: #e3ebef; --utz-header: #ffffff; --accent: #3f4fcf; --accent-soft: #e2e5fa; }
+  :root[data-theme="light"]{ --bg: #f1f7f5; --panel: #ffffff; --panel2: #e6f0ed; --border: #cbe0da; --text: #10221e; --muted: #587a72; --muted2: #7c9790; --accent-ink: #ffffff; --danger: #d43b3b; --warn: #b7791f; --ok: #1f9a4f; --utz-deep: #e0ece8; --utz-header: #ffffff; --accent: #0b7a63; --accent-bright: #0b7a63; --accent-soft: #d5efe8; }
   :root[data-theme="light"] select, :root[data-theme="light"] input, :root[data-theme="light"] textarea{ color-scheme: light; }
   /* (2026-10-02) dark mode: a control no app style has touched gets a real dark background AND readable text (zero specificity, so every
      app's own control styles still win). A native select's open list and its options take the page's light text colour but the browser's
@@ -392,24 +392,226 @@
   :root[data-theme="light"] .refresh-note{ color: #4d6572; } /* (2026-10-02) 2.9:1 -> 5.6:1 */
 </style>
 <!-- UTZLINE-THEME END -->
+<!-- UTZLINE-PDF-VIEW BEGIN (generated from shared/pdf-view -- don't edit here) -->
+<script>
+/* ============================== UTZLINE in-app PDF viewer (2026-10-04) ==============================
+   Andrew: "pdfs only load on tablet sometimes (or need to open them in a different pdf viewer, can this be made more
+   reliable" / "and hardly ever open on my phone, galaxy s25+". Chrome on Android (and the installed apps) has no PDF viewer
+   of its own: a PDF opened with window.open(blob URL) only sometimes reaches one. On a phone / tablet every app now shows
+   PDFs itself with pdf.js (./pdf.min.js + ./pdf.worker.min.js beside each app, precached for offline):
+     - window.open(<blob: URL>) is caught on Android / iOS: the blob is read; a PDF opens here, anything else (a picture)
+       is shown here too. The caller gets a stand-in window back, so its own "popup blocked" fallbacks don't fire.
+     - UtzPdfView.open(blobOrFile, name) can be called directly.
+   The viewer: pages drawn as they scroll into view, at the screen's width (4 GB tablet: one page's pixels at a time
+   beyond the visible ones are let go), Zoom in / out, Share (the device's share sheet), Save (a download) and Close
+   (also the device Back button). A computer keeps opening PDFs in its own viewer, as before.
+   Plain ES5, no dependencies besides pdf.js (loaded on first use). */
+(function(){
+  "use strict";
+  if (window.UtzPdfView) return;
+  var MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "") || (/Macintosh/.test(navigator.userAgent || "") && navigator.maxTouchPoints > 1);
+  var LIB = ["./pdf.min.js", "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"];
+  var WORKER = ["./pdf.worker.min.js", "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js"];
+  var libP = null;
+  function loadLib(){
+    if (window.pdfjsLib && window.pdfjsLib.getDocument) return Promise.resolve(window.pdfjsLib);
+    if (libP) return libP;
+    libP = new Promise(function(resolve, reject){
+      var i = 0;
+      function next(){
+        if (i >= LIB.length){ libP = null; reject(new Error("The PDF viewer couldn't load")); return; }
+        var src = LIB[i], w = WORKER[i]; i++;
+        var el = document.createElement("script"); el.src = src; el.async = true;
+        el.onload = function(){ if (window.pdfjsLib && window.pdfjsLib.getDocument){ try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc = w; }catch(e){} resolve(window.pdfjsLib); } else next(); };
+        el.onerror = function(){ if (el.parentNode) el.parentNode.removeChild(el); next(); };
+        document.head.appendChild(el);
+      }
+      next();
+    });
+    return libP;
+  }
+  function css(){
+    if (document.getElementById("utzPdfViewCss")) return;
+    var st = document.createElement("style"); st.id = "utzPdfViewCss";
+    st.textContent = [
+      ".upv{position:fixed;inset:0;z-index:2147483000;background:#1f2326;display:flex;flex-direction:column;color:#fff;font:14px/1.3 'IBM Plex Sans',system-ui,sans-serif;}",
+      ".upv-bar{display:flex;align-items:center;gap:6px;padding:8px 10px;padding-top:max(8px,env(safe-area-inset-top));background:#111416;flex:0 0 auto;}",
+      ".upv-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;}",
+      ".upv-btn{font:inherit;font-size:14px;min-height:40px;padding:6px 12px;border-radius:8px;border:1px solid #4a5258;background:#2b3135;color:#fff;cursor:pointer;}",
+      ".upv-btn.upv-close{background:#c8391c;border-color:#c8391c;font-weight:600;}",
+      ".upv-pages{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;padding:10px 0 40px;touch-action:pan-x pan-y pinch-zoom;}",
+      ".upv-page{margin:0 auto 10px;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.4);position:relative;}",
+      ".upv-page canvas,.upv-page img{display:block;width:100%;height:100%;}",
+      ".upv-msg{padding:30px 16px;text-align:center;color:#ccd;}"
+    ].join("\n");
+    document.head.appendChild(st);
+  }
+  function download(blob, name){
+    var url = URL.createObjectURL(blob), a = document.createElement("a");
+    a.href = url; a.download = name || "document.pdf"; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
+  }
+  // The device Back button closes this page and goes no further: this listener is added when the module loads, ahead of the
+  // app's own Back handling (registered later), so it can stop the same pop reaching the app.
+  window.addEventListener("popstate", function(e){ if (!current) return; current.pushed = false; close(); e.stopImmediatePropagation(); });
+  var current = null;
+  function close(){
+    if (!current) return;
+    var c = current; current = null;
+    try{ c.observer && c.observer.disconnect(); }catch(e){}
+    try{ c.doc && c.doc.destroy(); }catch(e){}
+    if (c.el.parentNode) c.el.parentNode.removeChild(c.el);
+    if (c.pushed && history.state && history.state.utzPdfView){ try{ history.replaceState(c.prevState, ""); }catch(e){} }
+  }
+  function open(blob, name){
+    css();
+    if (current) close();
+    name = name || (blob && blob.name) || "document.pdf";
+    var el = document.createElement("div"); el.className = "upv"; el.setAttribute("role", "dialog"); el.setAttribute("aria-label", name);
+    el.innerHTML = '<div class="upv-bar"><span class="upv-name"></span>' +
+      '<button type="button" class="upv-btn" data-a="out" aria-label="Zoom out">−</button><button type="button" class="upv-btn" data-a="in" aria-label="Zoom in">+</button>' +
+      '<button type="button" class="upv-btn" data-a="share">Share</button><button type="button" class="upv-btn" data-a="save">Save</button>' +
+      '<button type="button" class="upv-btn upv-close" data-a="close">Close</button></div><div class="upv-pages"><div class="upv-msg">Opening…</div></div>';
+    el.querySelector(".upv-name").textContent = name;
+    if (!navigator.share) el.querySelector('[data-a="share"]').style.display = "none"; // Fully Kiosk / an Android WebView has no share sheet
+    document.body.appendChild(el);
+    var pagesEl = el.querySelector(".upv-pages");
+    var c = current = { el: el, doc: null, zoom: 1, observer: null, pushed: false };
+    // the device Back button closes the viewer, not the app
+    c.prevState = history.state; // Close turns our entry back into this one (history.back() would also reach the app's own Back and leave its screen)
+    try{ history.pushState({ utzPdfView: true }, ""); c.pushed = true; }catch(e){}
+    el.addEventListener("click", function(e){
+      var b = e.target.closest && e.target.closest("[data-a]"); if (!b) return;
+      var a = b.getAttribute("data-a");
+      if (a === "close") close();
+      else if (a === "save") download(blob, name);
+      else if (a === "share"){
+        var f = null; try{ f = new File([blob], name, { type: blob.type || "application/pdf" }); }catch(err){}
+        if (f && navigator.share && (!navigator.canShare || navigator.canShare({ files: [f] }))) navigator.share({ files: [f] }).catch(function(){});
+        else download(blob, name);
+      }
+      else if (a === "in" || a === "out"){ c.zoom = Math.max(1, Math.min(4, c.zoom * (a === "in" ? 1.5 : 1 / 1.5))); layout(); }
+    });
+    var pageBoxes = [];
+    function layout(){
+      var w = Math.max(200, (pagesEl.clientWidth - 16) * c.zoom);
+      pageBoxes.forEach(function(p){ p.box.style.width = w + "px"; p.box.style.height = (w * p.ratio) + "px"; if (p.drawnAt && p.drawnAt < w * 0.9){ p.drawnAt = 0; if (p.visible) draw(p); } });
+    }
+    function draw(p){
+      if (!c.doc || p.busy) return;
+      var w = p.box.clientWidth; if (!w) return;
+      p.busy = true;
+      c.doc.getPage(p.n).then(function(page){
+        var vp1 = page.getViewport({ scale: 1 });
+        var px = Math.min(2400, w * Math.min(2, window.devicePixelRatio || 1));
+        var vp = page.getViewport({ scale: px / vp1.width });
+        var cv = document.createElement("canvas"); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+        return page.render({ canvasContext: cv.getContext("2d"), viewport: vp }).promise.then(function(){
+          if (current !== c) return;
+          p.box.innerHTML = ""; p.box.appendChild(cv); p.drawnAt = w; p.canvas = cv;
+        });
+      }).catch(function(err){ console.error("PDF page failed:", err); }).then(function(){ p.busy = false; });
+    }
+    function forget(p){ if (p.canvas){ p.canvas.width = p.canvas.height = 0; p.canvas = null; p.box.innerHTML = ""; p.drawnAt = 0; } }
+    var isPdf = /pdf/i.test(blob.type || "") || /\.pdf$/i.test(name);
+    var headP = isPdf ? Promise.resolve(true) : blob.slice(0, 5).arrayBuffer().then(function(b){ return String.fromCharCode.apply(null, new Uint8Array(b)) === "%PDF-"; });
+    headP.then(function(pdf){
+      if (!pdf){
+        // not a PDF (a photo): just show it
+        var url = URL.createObjectURL(blob);
+        pagesEl.innerHTML = ""; var box = document.createElement("div"); box.className = "upv-page"; box.style.width = "calc(100% - 16px)";
+        var img = document.createElement("img"); img.src = url; img.style.height = "auto"; box.appendChild(img); pagesEl.appendChild(box);
+        c.doc = { destroy: function(){ URL.revokeObjectURL(url); } };
+        return;
+      }
+      return Promise.all([loadLib(), blob.arrayBuffer()]).then(function(r){
+        return r[0].getDocument({ data: new Uint8Array(r[1]) }).promise;
+      }).then(function(doc){
+        if (current !== c){ doc.destroy(); return; }
+        c.doc = doc;
+        pagesEl.innerHTML = "";
+        var chain = Promise.resolve();
+        for (var n = 1; n <= doc.numPages; n++) (function(n){
+          var box = document.createElement("div"); box.className = "upv-page"; pagesEl.appendChild(box);
+          var p = { n: n, box: box, ratio: 1.414, visible: false };
+          pageBoxes.push(p);
+          // each page's own shape (portrait / landscape A3), read before it is drawn
+          chain = chain.then(function(){ return doc.getPage(n).then(function(pg){ var v = pg.getViewport({ scale: 1 }); p.ratio = v.height / v.width; }); });
+        })(n);
+        return chain.then(function(){
+          layout();
+          c.observer = new IntersectionObserver(function(entries){
+            entries.forEach(function(en){
+              var p = pageBoxes.filter(function(x){ return x.box === en.target; })[0]; if (!p) return;
+              p.visible = en.isIntersecting;
+              if (en.isIntersecting && !p.drawnAt) draw(p);
+              else if (!en.isIntersecting) forget(p);
+            });
+          }, { root: pagesEl, rootMargin: "100% 0px" });
+          pageBoxes.forEach(function(p){ c.observer.observe(p.box); });
+        });
+      });
+    }).catch(function(err){
+      console.error("PDF view failed:", err);
+      if (current !== c) return;
+      pagesEl.innerHTML = '<div class="upv-msg">This PDF couldn\'t be shown here. Use Save, then open it from Downloads, or Share it.</div>';
+    });
+    return el;
+  }
+  // window.open(<blob: URL>) on a phone / tablet -> this viewer
+  if (MOBILE){
+    var nativeOpen = window.open;
+    window.open = function(url, target, features){
+      var u = String(url || "");
+      if (/^blob:/i.test(u)){
+        fetch(u).then(function(r){ return r.blob(); }).then(function(b){ open(b, /pdf/i.test(b.type || "") ? "PDF" : "File"); }).catch(function(err){
+          console.error("Couldn't open that file here:", err);
+          try{ nativeOpen.call(window, url, target, features); }catch(e){}
+        });
+        // a stand-in window, so the caller's "popup blocked" fallback (a download) doesn't run as well
+        return { closed: false, close: function(){ close(); }, focus: function(){}, document: { write: function(){}, close: function(){} }, location: { href: u } };
+      }
+      return nativeOpen.apply(window, arguments);
+    };
+  }
+  window.UtzPdfView = { open: open, close: close, mobile: MOBILE };
+})();
+</script>
+<!-- UTZLINE-PDF-VIEW END -->
+<script>
+/* (2026-10-04) Andrew: "Lightly shade the background of the column that is currently doing the sorting."
+   Called after a schedule table marks its th.sorted; tags that column's cells (td.sort-col). The shade is a
+   background-image so a frozen (sticky) cell keeps its own opaque background underneath. */
+function utzShadeSortedColumn(table){
+  if (!table) return;
+  var ths = table.querySelectorAll("thead th"), idx = -1, i;
+  for (i = 0; i < ths.length; i++){ if (ths[i].classList.contains("sorted")){ idx = i; break; } }
+  var rows = table.tBodies.length ? table.tBodies[0].rows : [];
+  for (i = 0; i < rows.length; i++){
+    var cells = rows[i].cells;
+    for (var j = 0; j < cells.length; j++) cells[j].classList.toggle("sort-col", j === idx);
+  }
+}
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>UTZLINE Solid Surface Schedule</title>
-<meta name="theme-color" content="#0e161a" data-theme-light="#f2f6f8">
+<meta name="theme-color" content="#0d1614" data-theme-light="#f1f7f5">
 <link rel="manifest" href="./manifest.json">
 <link rel="icon" href="./icons/icon-192.png">
 <link rel="apple-touch-icon" href="./icons/icon-192.png">
 <style>
   :root{
-    --bg: #0e161a;
-    --panel: #142027;
-    --panel2: #1a2830;
-    --border: #263a44;
-    --text: #eaf3f6;
-    --muted: #9db3bc;
-    --muted2: #6f8b96;
-    --accent: #4f5fe0;
-    --accent-ink: #ffffff;
-    --accent-soft: #1c2150;
+    --bg: #0d1614;
+    --panel: #13201d;
+    --panel2: #192a26;
+    --border: #253b36;
+    --text: #e9f5f2;
+    --muted: #9cb8b1;
+    --muted2: #6e8c85;
+    --accent: #1ec8a5;
+    --accent-bright: #4fdcbf;
+    --accent-ink: #00241c;
+    --accent-soft: #10332b;
     --danger: #ff5d5d;
     --warn: #e0a12c;
     --ok: #33c46a;
@@ -446,7 +648,8 @@
   }
   header img{ width: 32px; height: 32px; border-radius: 8px; }
   header .brand{ font-weight: 700; font-size: 17px; letter-spacing: 0.2px; }
-  header .brand small{ display:block; font-weight: 500; font-size: 11px; color: var(--muted); letter-spacing: 0.5px; }
+  header .brand b{ color: var(--accent-bright); font-weight: inherit; } /* UTZ + coloured LINE, like the other apps */
+  header .brand small{ display:block; font-family: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; font-weight: 400; font-size: 10.5px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
   main{
     flex: 1 1 auto;
     overflow-y: auto;
@@ -733,6 +936,7 @@
      Ctrl + wheel) zooms the whole table, 60%-200%, kept per table on this
      device. ---- */
   .table-scroll{ overflow-y: auto; max-height: calc(100vh - 70px); max-height: calc(100dvh - 70px); overscroll-behavior: contain; padding-top: 0; }
+  main.fit-table{ padding-bottom: 12px; } /* (2026-10-04) one scroll bar: the table's (fitTableToWindow) */
   .table-scroll > table{ zoom: var(--tz, 1); }
   .table-scroll > table thead th{ position: sticky; top: 0; z-index: 3; background: var(--panel); box-shadow: inset 0 -1px 0 var(--border); }
   @media (min-width: 900px){
@@ -754,6 +958,7 @@
   .sched-table th:hover{ color: var(--text); }
   .sched-table th.sorted::after{ content: " \25B2"; font-size: 10px; }
   .sched-table th.sorted.desc::after{ content: " \25BC"; }
+  .sched-table th.sorted, .sched-table td.sort-col{ background-image: linear-gradient(color-mix(in srgb, var(--accent) 9%, transparent), color-mix(in srgb, var(--accent) 9%, transparent)); } /* (2026-10-04) the sorting column is lightly shaded */
   .sched-table td{ padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; white-space: nowrap; }
   .sched-table td.wrap{ white-space: normal; }
   .sched-table tbody tr:last-child td{ border-bottom: none; }
@@ -764,7 +969,7 @@
   /* (v15) the tint is an inset shadow over the cell's own background, not a
      translucent background -- the frozen columns must stay opaque or the
      columns scrolled under them show through while a row is held */
-  .sched-table tbody tr.lp-pressing td{ box-shadow: inset 0 0 0 100vmax rgba(31,143,191,0.18); transition: box-shadow .5s; }
+  .sched-table tbody tr.lp-pressing td{ box-shadow: inset 0 0 0 100vmax rgba(30,200,165,0.18); transition: box-shadow .5s; }
   @media (pointer: coarse){ .sched-table tbody tr{ -webkit-user-select: none; user-select: none; } }
   .status-label{ display: inline-flex; align-items: center; gap: 6px; }
   .status-label .status-icon{ font-size: 13px; }
@@ -789,7 +994,7 @@
      app's own --accent (a blue/teal here too), same rgba-from-var pattern
      as every other .delay-* rule above. Shown SIDE BY SIDE with
      .delay-start (amber) when both apply -- see delayPillsHtml. */
-  .delay-upcoming{ background: rgba(79,95,224,0.18); color: var(--accent); }
+  .delay-upcoming{ background: rgba(30,200,165,0.18); color: var(--accent); }
   /* (2026-09-30, v19) Andrew, with a screenshot of the buttons stacked and cut off at the right edge:
      "these should not be stacked or cutoff on solid surface schedule". A display:flex <td> stops being a
      table cell (it shrank to one button wide, stacked the rest and overflowed the table), so the buttons
@@ -851,13 +1056,14 @@
     .sched-table thead th.sticky-col{ z-index: 3; }
     .sched-table tbody tr:hover td.sticky-col{ background: var(--panel2); }
     .sched-table .sticky-col-last{ border-right: 1px solid var(--border); box-shadow: 3px 0 6px -3px rgba(0,0,0,0.45); }
-    .sched-table tbody tr.lp-pressing td.sticky-col-last{ box-shadow: inset 0 0 0 100vmax rgba(31,143,191,0.18), 3px 0 6px -3px rgba(0,0,0,0.45); }
+    .sched-table tbody tr.lp-pressing td.sticky-col-last{ box-shadow: inset 0 0 0 100vmax rgba(30,200,165,0.18), 3px 0 6px -3px rgba(0,0,0,0.45); }
     #overallTable .sticky-col:nth-child(1), #projTable .sticky-col:nth-child(1){ left: var(--sc0, 0px); }
     #overallTable .sticky-col:nth-child(2), #projTable .sticky-col:nth-child(2){ left: var(--sc1, 0px); }
     #overallTable .sticky-col:nth-child(3), #projTable .sticky-col:nth-child(3){ left: var(--sc2, 0px); }
     #overallTable .sticky-col:nth-child(4), #projTable .sticky-col:nth-child(4){ left: var(--sc3, 0px); }
     #overallTable .sticky-col:nth-child(5), #projTable .sticky-col:nth-child(5){ left: var(--sc4, 0px); }
-    #overallTable .sticky-col:nth-child(6){ left: var(--sc5, 0px); }
+    #overallTable .sticky-col:nth-child(6), #projTable .sticky-col:nth-child(6){ left: var(--sc5, 0px); }
+    #overallTable .sticky-col:nth-child(7){ left: var(--sc6, 0px); }
   }
 
   /* ---- Status-history hover popup (2026-09-23, ported from UTZLINE
@@ -1819,7 +2025,7 @@
   .ix-h-row:first-child{ border-top: none; }
   .ix-h-when{ color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12.5px; }
   .ix-h-cat{ display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 1px 7px; border-radius: 999px; margin-right: 6px; background: rgba(255,255,255,.07); color: var(--muted); vertical-align: 1px; }
-  .ix-h-cat.c-status{ background: rgba(31,143,191,.18); color: #5fb8e0; }
+  .ix-h-cat.c-status{ background: rgba(30,200,165,.18); color: #5fb8e0; }
   .ix-h-cat.c-edit{ background: rgba(240,178,62,.16); color: #f0b23e; }
   .ix-h-cat.c-schedule{ background: rgba(74,144,255,.16); color: #7fb0ff; }
   .ix-h-cat.c-rework{ background: rgba(255,93,93,.16); color: #ff8a8a; }
@@ -1881,6 +2087,15 @@
   }
   // The file name an item would get if nothing else in the project had it.
   function baseOf(code, room){ return clean(code) || clean(room, 30) || "Item"; }
+  function pad3(n){ n = String(parseInt(n, 10) || 0); while (n.length < 3) n = "0" + n; return n; }
+  // (2026-10-04) "<number> <code>" -- the number first, so a folder of items sorts in the order they were numbered
+  // (2026-10-04) Andrew: "i want the filename to be "JG.33.1 - 001 - " etc" -- the code, then the item's number
+  function numberedBase(it){
+    var no = parseInt(it && it.itemNo, 10) > 0 ? pad3(it.itemNo) : "", base = baseOf(it.joineryId, it.room);
+    if (!no) return base;
+    var tail = " - " + no;
+    return base.slice(0, MAX - tail.length).replace(/[ ._-]+$/, "") + tail;
+  }
   function low(s){ return String(s == null ? "" : s).trim().toLowerCase(); }
   function tripleKey(level, room, code){ return low(level) + "\u0000" + low(room) + "\u0000" + low(code); }
   // A file name that can go on disk as given (what assign() would have made).
@@ -1901,11 +2116,29 @@
       var k = it.fileKey.toLowerCase(), t = tripleKey(it.level, it.room, it.joineryId);
       if (used[k] && used[k] !== t) it.fileKey = ""; else { used[k] = t; if (!byTriple[t]) byTriple[t] = it.fileKey; }
     });
+    // (2026-10-04) Andrew: "all joinery items have an individual 3 digit number, goes on the both" (file names and PDFs). Every
+    // item gets the project's next number once ("001", "002", ... -- 4 digits past 999), in the order the items are listed, and
+    // it never changes or gets used again. The number follows the code in the item's file name: "JG.33.1 - 001". An item without a number
+    // (made before this) gets one now, and its file name is made again with the number (a fresh install: nothing old to keep).
+    var maxNo = 0, noOfTriple = {};
+    items.forEach(function(it){
+      if (!it || typeof it !== "object") return;
+      var v = parseInt(it.itemNo, 10);
+      if (v > 0){ var t = tripleKey(it.level, it.room, it.joineryId); if (noOfTriple[t] && noOfTriple[t] !== v){ it.itemNo = ""; return; } noOfTriple[t] = v; if (v > maxNo) maxNo = v; }
+    });
+    items.forEach(function(it){
+      if (!it || typeof it !== "object") return;
+      var t = tripleKey(it.level, it.room, it.joineryId);
+      if (parseInt(it.itemNo, 10) > 0) return;
+      if (noOfTriple[t]){ it.itemNo = pad3(noOfTriple[t]); return; } // the same item listed twice: one number
+      maxNo++; it.itemNo = pad3(maxNo); noOfTriple[t] = maxNo;
+      if (it.fileKey && it.fileKey.indexOf(" - " + it.itemNo) === -1){ used[String(it.fileKey).toLowerCase()] = ""; it.fileKey = ""; byTriple[t] = ""; }
+    });
     items.forEach(function(it){
       if (!it || typeof it !== "object" || valid(it.fileKey)) return;
       var t = tripleKey(it.level, it.room, it.joineryId);
       if (byTriple[t]){ it.fileKey = byTriple[t]; n++; return; }
-      var b = baseOf(it.joineryId, it.room), k = b, i = 2;
+      var b = numberedBase(it), k = b, i = 2;
       while (used[k.toLowerCase()]){ k = b + " (" + i + ")"; i++; }
       it.fileKey = k; used[k.toLowerCase()] = t; byTriple[t] = k; n++;
     });
@@ -1914,22 +2147,28 @@
 
   // Each project's items, as read by the app: project (its folder name) ->
   // { triple -> fileKey }. The project read last is the "current" one.
-  var maps = {}, current = null, rev = {};
+  var maps = {}, current = null, rev = {}, nos = {}, abbrs = {};
   function register(project, items){
-    var m = {};
+    var m = {}, nm = {};
     (Array.isArray(items) ? items : []).forEach(function(it){
       if (!it || typeof it !== "object") return;
       var t = tripleKey(it.level, it.room, it.joineryId);
-      if (!(t in m)) m[t] = valid(it.fileKey) ? it.fileKey : baseOf(it.joineryId, it.room); // the first of a duplicated record decides
+      if (!(t in m)) m[t] = valid(it.fileKey) ? it.fileKey : numberedBase(it); // the first of a duplicated record decides
+      if (!(t in nm) && parseInt(it.itemNo, 10) > 0) nm[t] = pad3(it.itemNo);
     });
     project = String(project || "");
-    maps[project] = m; current = project;
+    var ab = {};
+    (Array.isArray(items) ? items : []).forEach(function(it){
+      if (it && typeof it === "object" && it.levelAbbr && it.level != null && !ab[low(it.level)]){ var a = clean(it.levelAbbr, 5); if (a) ab[low(it.level)] = a; }
+    });
+    abbrs[project] = ab;
+    maps[project] = m; current = project; nos[project] = nm;
     // (2026-10-02) and the other way round: file name -> where the item is (its level and room), for the
     // PDFs\IFC / PDFs\SD folders (docsDir below). The first record of a file name decides, like the map above.
     var r = {};
     (Array.isArray(items) ? items : []).forEach(function(it){
       if (!it || typeof it !== "object") return;
-      var k = valid(it.fileKey) ? it.fileKey : baseOf(it.joineryId, it.room), lk = low(k);
+      var k = valid(it.fileKey) ? it.fileKey : numberedBase(it), lk = low(k);
       if (!(lk in r)) r[lk] = { level: it.level == null ? "" : String(it.level), room: it.room == null ? "" : String(it.room) };
     });
     rev[project] = r;
@@ -1986,8 +2225,10 @@
       var hs = h.toString(36).slice(0, 4);
       if (cut) k = k + " ~" + hs;
     }
+    rmLoc[low(k)] = { level: level == null ? "" : String(level), room: room == null ? "" : String(room) }; // (2026-10-04) where its folder goes
     return k;
   }
+  var rmLoc = {};
 
 
   /* ============================== job notes and shop drawings in PDFs\IFC and PDFs\SD (2026-10-02) ==============================
@@ -1996,19 +2237,21 @@
          PDFs\SD\<Level>\<Room>\<item file name>\<drawing>\REV n - <stamp> - <code>.pdf   (+ Returned\, Approved\)
      (level cut to 30 like the event folders, room = the room NUMBER, "No level" / "No room" when unknown). The older
          Project Saves\Job Notes\<item file name>\   and   Project Saves\Shop Drawings\<item file name>\
-     are no longer read (DOC_READ_OLD; Andrew is happy to lose them) and nothing is moved or deleted. docsDir() hands back
-     a stand-in folder (it can list a second, older folder together with the new one, which DOC_READ_OLD switches on).
+     are not read (2026-10-04, Andrew: "I DONT WANT BACKWRDS COMPATIBILITY"). docsDir() hands back a stand-in folder.
      An item moved to another room afterwards keeps its files in the old room's folder: they are not listed with the
      item (logged in the notes). */
-  var DOC_OLD = { JN: "Job Notes", SD: "Shop Drawings" };
   // (v98+) the folder under PDFs\ for each kind: job notes are "IFC" (Issued For Construction -- Andrew 2026-10-02: "change JN to IFC"); the code
   // (and every call site) still says "JN" -- only the folder and the file-name tag read IFC.
   var DOC_NEW = { JN: "IFC", SD: "SD" };
-  // (2026-10-02, Andrew: "im happy to lose old files, as long as new ones work") the older Project Saves folders
-  // are NOT read any more; set true to list them together with the new ones again.
-  var DOC_READ_OLD = false;
   var NO_WHERE = { level: "", room: "" }; // an item the app can't place: PDFs\IFC\No level\No room\<item>
-  function levelSeg(level){
+  // (2026-10-04) Andrew: "use the level Abbreviation in projects (when you import)" -- Projects keeps each level's abbreviation on its
+  // items ("levelAbbr" in joinery-items.json); register() collects them, and every level folder is that abbreviation when the level has one.
+  function abbrOf(level, project){
+    var p = project != null ? String(project) : current, a = p != null ? abbrs[p] : null;
+    return (a && a[low(level)]) || "";
+  }
+  function levelSeg(level, project){
+    var ab = abbrOf(level, project); if (ab) return ab;
     if (window.UtzEvents && UtzEvents.levelFolder) return UtzEvents.levelFolder(level);
     return clean(level, 30) || "No level";
   }
@@ -2030,15 +2273,103 @@
     if (n === 0 && window.UtzEvents && UtzEvents.where){ var w = UtzEvents.where(key); if (w) return w; }
     return null;
   }
-  function newDocSegs(branch, key, loc){
+  function newDocSegs(branch, key, loc, project){
     loc = loc || NO_WHERE;
-    return ["PDFs", DOC_NEW[branch] || branch, levelSeg(loc.level), roomSeg(loc.room), String(key)];
+    return ["PDFs", DOC_NEW[branch] || branch, levelSeg(loc.level, project), roomSeg(loc.room), String(key)];
   }
-  function oldDocSegs(branch, key){ return ["Project Saves", DOC_OLD[branch], String(key)]; }
   // the folders (from the project folder) a new file for this item is written under -- for the path-length check
   function docPathSegs(project, branch, key, sub, loc){
-    return newDocSegs(branch, key, loc || where(key, project)).concat(sub || []);
+    return newDocSegs(branch, key, loc || where(key, project), project).concat(sub || []);
   }
+
+
+  // (2026-10-04) an item's 3-digit number ("" when the items read don't have one) and the label for PDFs / screens: "JG.33.1 - 001" (the same as the file name)
+  function itemNo(level, room, code, project){
+    var t = tripleKey(level, room, code), p = project != null ? String(project) : current;
+    if (p != null && nos[p] && nos[p][t]) return nos[p][t];
+    var hit = ""; Object.keys(nos).forEach(function(q){ if (!hit && nos[q][t]) hit = nos[q][t]; });
+    return hit;
+  }
+  function label(level, room, code, project){ var n = itemNo(level, room, code, project); return (code || "") + (n ? " - " + n : ""); }
+
+  /* (2026-10-04) Andrew: "everything needs to be separated by room / joinery item across all saves even if there is only one joinery
+     item in a room". Every kind of save keeps the layout PDFs\ already has:   <kind folders>\<Level>\<Room>\<item file name>\...
+     (level cut to 30, room NUMBER, "No level" / "No room" when unknown -- the same names as above). itemSegs gives the folders,
+     itemDir opens / makes them, roomDir the room's own folder (a room's site measure), listItemDirs every item folder of a kind
+     (for the registers: one listing per level and per room, done a few at a time). */
+  function itemSegs(rootSegs, key, project, loc){
+    loc = loc || where(key, project) || NO_WHERE;
+    return rootSegs.concat([levelSeg(loc.level, project), roomSeg(loc.room), String(key)]);
+  }
+  function roomSegs(rootSegs, level, room, project){ return rootSegs.concat([levelSeg(level, project), roomSeg(room)]); }
+  function itemDir(ph, rootSegs, key, create, loc){
+    var segs = itemSegs(rootSegs, key, ph && ph.name, loc);
+    return create ? walkDirs(ph, segs, true) : tryWalk(ph, segs);
+  }
+  function roomDir(ph, rootSegs, level, room, create){
+    var segs = roomSegs(rootSegs, level, room, ph && ph.name);
+    return create ? walkDirs(ph, segs, true) : tryWalk(ph, segs);
+  }
+  // every item folder under <rootSegs>: [{ key, levelDir, roomDir, dir, segs }]
+  function listItemDirs(ph, rootSegs){
+    return tryWalk(ph, rootSegs).then(function(base){
+      if (!base) return [];
+      var out = [];
+      return subdirs(base).then(function(levels){
+        return mapPool(levels, 3, function(lv){
+          return subdirs(lv).then(function(rooms){
+            return mapPool(rooms, 3, function(rm){
+              return subdirs(rm).then(function(items){ items.forEach(function(d){ out.push({ key: d.name, levelDir: lv.name, roomDir: rm.name, dir: d, segs: rootSegs.concat([lv.name, rm.name, d.name]) }); }); return 1; });
+            });
+          });
+        });
+      }).then(function(){ return out; });
+    });
+  }
+
+  // (2026-10-04) the ITP apps' saves, for every app that shows them (app = "Install ITP" | "Manufacture ITP" | "Delivery ITP"):
+  //   a room's checklists  Project Saves\UTZLINE ITP\<app>\<Level>\<Room>\<item>.json
+  //   an item's changes    Project Saves\UTZLINE ITP\<app> Log\<Level>\<Room>\<item>\
+  //   an item's PDFs       PDFs\ITPs\<Install|Manufacture|Delivery>\<Level>\<Room>\<item>\
+  // Each resolves null when it isn't there (never creates anything).
+  function itpChecklist(ph, app, level, room, key){
+    return roomDir(ph, ["Project Saves", "UTZLINE ITP", app], level, room, false).then(function(d){ return d ? tryGet(d, "getFileHandle", String(key) + ".json") : null; });
+  }
+  function itpLogDir(ph, app, key, loc){ return itemDir(ph, ["Project Saves", "UTZLINE ITP", app + " Log"], key, false, loc); }
+  function itpPdfDir(ph, app, key, loc){ return itemDir(ph, ["PDFs", "ITPs", String(app).replace(/ ITP$/, "")], key, false, loc); }
+
+  // (2026-10-04) Site measures:  Project Saves\Site Measures\<Level>\<Room>\<page>\   (+ <page>.json beside it), a page being the
+  // room's own site measure ("Room - <level> - <room>", roomMeasureKey) or one item's own page (its file name). smParent: the room
+  // folder that holds the page's folder and file; listSiteMeasureKeys: every page folder there is.
+  function smParentSegs(key, project){
+    var loc = rmLoc[low(key)] || where(key, project) || NO_WHERE;
+    return ["Project Saves", "Site Measures", levelSeg(loc.level, project), roomSeg(loc.room)];
+  }
+  function smParent(ph, key, create){ var segs = smParentSegs(key, ph && ph.name); return create ? walkDirs(ph, segs, true) : tryWalk(ph, segs); }
+  function smDir(ph, key, create){ return smParent(ph, key, create).then(function(d){ return d ? (create ? d.getDirectoryHandle(String(key), { create: true }) : tryGet(d, "getDirectoryHandle", String(key))) : null; }); }
+  // an item's site measure: its own page if it has one, else its room's (the room's site measure covers every item in it)
+  function smDirForItem(ph, key){
+    return smDir(ph, key, false).then(function(d){
+      if (d) return d;
+      var loc = where(key, ph && ph.name);
+      return loc ? smDir(ph, roomMeasureKey(loc.level, loc.room), false) : null;
+    });
+  }
+  function listSiteMeasureKeys(ph){
+    return tryWalk(ph, ["Project Saves", "Site Measures"]).then(function(base){
+      if (!base) return [];
+      var out = [];
+      return subdirs(base).then(function(levels){
+        return mapPool(levels, 3, function(lv){ return subdirs(lv).then(function(rooms){ return mapPool(rooms, 3, function(rm){ return subdirs(rm).then(function(ks){ ks.forEach(function(d){ out.push(d.name); }); return 1; }); }); }); });
+      }).then(function(){ return out; });
+    });
+  }
+
+  // (2026-10-04) Sub orders: one folder per item --  Project Saves\UTZLINE Sub Orders\Orders\<Level>\<Room>\<item>\
+  // holding <item>.json (the item's orders) and the order files attached to it (an order not on an item yet waits in Inbox\ + Files\).
+  var ORDERS_ROOT = ["Project Saves", "UTZLINE Sub Orders", "Orders"];
+  function ordersDir(ph, key, create, loc){ return itemDir(ph, ORDERS_ROOT, key, !!create, loc); }
+  function listOrdersDirs(ph){ return listItemDirs(ph, ORDERS_ROOT); }
 
   function nfErr(name){
     var e;
@@ -2164,10 +2495,10 @@
   // that is in neither place is a NotFoundError, as on a real handle. loc: { level, room } when the caller knows
   // them (else looked up by file name).
   function docsDir(ph, branch, key, create, sub, loc){
-    var oldSegs = oldDocSegs(branch, key), mainSegs = newDocSegs(branch, key, loc || where(key, ph && ph.name));
-    return Promise.all([tryWalk(ph, mainSegs), DOC_READ_OLD ? tryWalk(ph, oldSegs) : Promise.resolve(null)]).then(function(r){
-      if (!r[0] && !r[1] && !create) throw nfErr(key);
-      var p = Promise.resolve(new Ov(ph, mainSegs, r[0], r[1]));
+    var mainSegs = newDocSegs(branch, key, loc || where(key, ph && ph.name), ph && ph.name);
+    return tryWalk(ph, mainSegs).then(function(h){
+      if (!h && !create) throw nfErr(key);
+      var p = Promise.resolve(new Ov(ph, mainSegs, h, null));
       (sub || []).forEach(function(sg){ p = p.then(function(o){ return o.getDirectoryHandle(sg, { create: !!create }); }); });
       return p;
     });
@@ -2188,10 +2519,7 @@
   function subdirs(h){ return listHandles(h).then(function(l){ return l.filter(function(e){ return e.kind === "directory"; }); }); }
   function docsKeys(ph, branch){
     var found = {}, order = [];
-    function slot(k){ var lk = low(k); if (!found[lk]){ found[lk] = { key: k, mains: [], alt: null }; order.push(lk); } return found[lk]; }
-    var oldP = (DOC_READ_OLD ? tryWalk(ph, ["Project Saves", DOC_OLD[branch]]) : Promise.resolve(null)).then(function(b){ return b ? subdirs(b) : []; }).then(function(ds){
-      ds.forEach(function(d){ slot(d.name).alt = d; });
-    });
+    function slot(k){ var lk = low(k); if (!found[lk]){ found[lk] = { key: k, mains: [] }; order.push(lk); } return found[lk]; }
     var newP = tryWalk(ph, ["PDFs", DOC_NEW[branch] || branch]).then(function(b){ return b ? subdirs(b) : []; }).then(function(levels){
       return mapPool(levels, 3, function(lv){
         return subdirs(lv).then(function(rooms){
@@ -2204,15 +2532,15 @@
         });
       });
     });
-    return Promise.all([oldP, newP]).then(function(){
+    return newP.then(function(){
       return order.map(function(lk){
         var f = found[lk], m = f.mains[0] || null;
         if (f.mains.length > 1){ // the same name in two rooms: the one it is in now
-          var w = where(f.key, ph && ph.name), want = w ? newDocSegs(branch, f.key, w) : null;
+          var w = where(f.key, ph && ph.name), want = w ? newDocSegs(branch, f.key, w, ph && ph.name) : null;
           if (want) f.mains.forEach(function(x){ if (x.segs.join("\u0000") === want.join("\u0000")) m = x; });
         }
-        if (m) return new Ov(ph, m.segs, m.h, f.alt);
-        return new Ov(ph, newDocSegs(branch, f.key, where(f.key, ph && ph.name)), null, f.alt);
+        if (m) return new Ov(ph, m.segs, m.h, null);
+        return new Ov(ph, newDocSegs(branch, f.key, where(f.key, ph && ph.name), ph && ph.name), null, null);
       });
     });
   }
@@ -2224,6 +2552,7 @@
     initials: initials, stamp: stamp, tripleKey: tripleKey, roomMeasureKey: roomMeasureKey,
     levelSeg: levelSeg, roomShort: roomShort, roomSeg: roomSeg, where: where, docPathSegs: docPathSegs,
     docsDir: docsDir, docsKeys: docsKeys, docsForget: docsForget, isNotFound: isNF,
+    itemNo: itemNo, label: label, pad3: pad3, itemSegs: itemSegs, roomSegs: roomSegs, itemDir: itemDir, roomDir: roomDir, listItemDirs: listItemDirs, itpChecklist: itpChecklist, itpLogDir: itpLogDir, itpPdfDir: itpPdfDir, smParent: smParent, smDir: smDir, smDirForItem: smDirForItem, smParentSegs: smParentSegs, listSiteMeasureKeys: listSiteMeasureKeys, ordersDir: ordersDir, listOrdersDirs: listOrdersDirs, ORDERS_ROOT: ORDERS_ROOT, walk: walkDirs, tryWalk: tryWalk,
     _maps: function(){ return maps; }
   };
 })();
@@ -2245,21 +2574,10 @@
    A whole schedule is now one listing per level, not one per item.
 
    Nothing in the apps' reading and folding had to change: UtzEvents.root()
-   hands an app a stand-in for the old branch folder. Listing it gives one
+   hands an app a stand-in for the branch folder. Listing it gives one
    stand-in "item folder" per item (named with the app's own key), listing
-   one of those gives the item's files under their old names, and creating a
-   file in one writes it into the new level folder. Records still sitting in
-   the old per-item folders are read as well (merged into the same item, an
-   old copy of a moved file counted once), so nothing disappears while
-   devices are updated. Old folders' file lists are remembered on the device
-   for 12 hours (they only change when a device that hasn't been updated
-   writes there); UtzEvents.refresh({ old: true }) forgets that.
-
-   UtzEvents.tidy() moves the old per-item records into the new layout: copy,
-   read back, then remove the old file; an old item folder is removed once
-   empty. No screen calls it any more (the "Speed up this project" card was
-   removed from UTZLINE Projects in v48, 2026-09-30, once Andrew's jobs were
-   moved): the apps simply keep reading both layouts.
+   one of those gives the item's files under their usual names, and creating
+   a file in one writes it into the level folder.
 
    v2.1 (2026-10-01) -- Windows' 260-character path limit. Andrew: "some get
    corrupted from the import ... then i cant change them in the schedule" /
@@ -2308,9 +2626,8 @@
    163). The level folder is cut to 30 characters. A record whose leading
    part no app has named yet belongs to the item of that name (no level is
    put in front any more), and an item the app hasn't named is looked for in
-   every level folder. The old layouts are still read as before, but their
-   items keep their old long keys (a clean start: Andrew's pilot is set up
-   again).
+   every level folder. (A clean start: only this layout is read or written; there is no older
+   per-item-folder layout to read.)
 
    Generated into each app between UTZLINE-EVENT-STORE markers from
    shared/event-store/event-store.js -- edit it there. */
@@ -2318,7 +2635,7 @@
   "use strict";
   var ROOT = "UTZLINE Events", SEP = " -- ";
   var BRANCHES = ["Joinery Status", "Joinery Schedule", "Machining Flags", "Solid Surface Completion", "Solid Surface Schedule", "Joinery Cutting File", "Joinery Notes"];
-  var MEMO_MS = 4000, LEGACY_TTL = 12 * 3600 * 1000, MISS_MS = 5000, LEG_MISS_MS = 60000, NAME_KEY_MAX = 150;
+  var MEMO_MS = 4000, MISS_MS = 5000, NAME_KEY_MAX = 150;
   // The room-and-code part that leads a new record's name (the level is its
   // folder), and what the shortest record names need of a Windows path after
   // the project folder: "Project Saves\UTZLINE Events\" (29) + the longest
@@ -2334,18 +2651,6 @@
   function sanitize(name, max, fallback){
     var cleaned = String(name == null ? "" : name).replace(/[<>:"/\\|?*\x00-\x1f]/g, "").trim().replace(/^[._]+|[._\s]+$/g, "");
     return cleaned.slice(0, max) || fallback;
-  }
-  // The key every UTZLINE app has always used for an item's folder
-  // (Site Measure / the schedules / Projects: 120 characters, "plan"), with
-  // any "--" run made "-" so " -- " only ever separates key from name.
-  function canonSeg(s){ return sanitize(s, 120, "plan").replace(/-{2,}/g, "-"); }
-  function itemKey(level, room, code){
-    return canonSeg(level) + " - " + canonSeg(room) + (code ? " - " + canonSeg(code) : "");
-  }
-  // The ITPs' older 80-character key -- only used to find their old folders.
-  function itpKey(level, room, code){
-    function s(x){ return sanitize(x, 80, "item"); }
-    return s(level) + " - " + s(room) + (code ? " - " + s(code) : "");
   }
   function hash(str){
     var h = 2166136261;
@@ -2466,46 +2771,6 @@
   }
   function now(){ return Date.now(); }
 
-  // ---------- device cache of old folders' file lists (IndexedDB) ----------
-  var dbP = null;
-  function db(){
-    if (dbP) return dbP;
-    dbP = new Promise(function(res, rej){
-      if (typeof indexedDB === "undefined") return rej(new Error("no IndexedDB"));
-      var rq = indexedDB.open("utzline-event-store", 1);
-      rq.onupgradeneeded = function(){ rq.result.createObjectStore("kv"); };
-      rq.onsuccess = function(){ res(rq.result); };
-      rq.onerror = function(){ rej(rq.error); };
-    });
-    dbP.catch(function(){});
-    return dbP;
-  }
-  function idbGet(k){
-    return db().then(function(d){ return new Promise(function(res){
-      try{ var rq = d.transaction("kv", "readonly").objectStore("kv").get(k); rq.onsuccess = function(){ res(rq.result); }; rq.onerror = function(){ res(null); }; }catch(e){ res(null); }
-    }); }, function(){ return null; });
-  }
-  function idbSet(k, v){
-    return db().then(function(d){ return new Promise(function(res){
-      try{ var tx = d.transaction("kv", "readwrite"); tx.objectStore("kv").put(v, k); tx.oncomplete = function(){ res(true); }; tx.onerror = function(){ res(false); }; }catch(e){ res(false); }
-    }); }, function(){ return false; });
-  }
-  var legacyMem = {};
-  function legacyCache(id){
-    var L = legacyMem[id];
-    if (L) return L.p;
-    L = legacyMem[id] = { data: { folders: {}, rootAt: 0, rootNames: null }, timer: 0 };
-    L.p = idbGet("legacy\u0000" + id).then(function(v){
-      if (v && typeof v === "object" && v.folders) L.data = v;
-      return L;
-    });
-    return L.p;
-  }
-  function legacySave(L, id){
-    if (L.timer) return;
-    L.timer = setTimeout(function(){ L.timer = 0; idbSet("legacy\u0000" + id, L.data); }, 400);
-  }
-
   // ---------- one project's branch ----------
   var memos = {}, misses = {};
   function memoKey(id, level){ return id + "\u0000" + (level == null ? "*" : levelFolder(level)); }
@@ -2520,7 +2785,7 @@
       if (m.g){ var g = m.g[canon] || (m.g[canon] = newGroup(lf)); g.entries[base] = rec; }
     });
   }
-  function newGroup(lf){ return { entries: {}, legacy: [], lf: lf || null }; }
+  function newGroup(lf){ return { entries: {}, lf: lf || null }; }
   // A listing's files grouped per item. The grouping is redone when an app
   // has named more items since (registry), so a short or "_hash" record
   // name listed before its item was known still lands with its item.
@@ -2532,11 +2797,6 @@
       var g = groups[c] || (groups[c] = newGroup(e.lf));
       g.lf = e.lf;
       g.entries[e.base] = e.rec;
-    });
-    m.legacy.forEach(function(e){
-      var c = e.canon || canonOf(e.dh.name);
-      var g = groups[c] || (groups[c] = newGroup(null));
-      if (g.legacy.indexOf(e.dh) < 0) g.legacy.push(e.dh);
     });
     Object.keys(m.made).forEach(function(c){ if (!groups[c]) groups[c] = newGroup(m.made[c]); else if (!groups[c].lf) groups[c].lf = m.made[c]; });
     m.g = groups; m.ver = regVersion;
@@ -2567,11 +2827,11 @@
     return newH.getDirectoryHandle(lf, { create: !!create }).then(function(h){ c[lf] = h; return h; });
   }
   // -> Promise<memo>; memo.groups() is the listing grouped per item.
-  function scan(ctx, newH, legH, level){
+  function scan(ctx, newH, level){
     var k = memoKey(ctx.id, level);
     var m = !ctx.force && freshMemo(k);
-    if (m && m.newH === newH && m.legH === legH) return m.p;
-    m = { at: now(), p: null, raw: [], legacy: [], made: {}, g: null, ver: -1, newH: newH, legH: legH };
+    if (m && m.newH === newH) return m.p;
+    m = { at: now(), p: null, raw: [], made: {}, g: null, ver: -1, newH: newH };
     m.groups = function(){ return groupsOf(m); };
     function addNew(levelDirH, files){
       files.forEach(function(f){
@@ -2592,40 +2852,11 @@
         return Promise.all(dirs.map(function(lh){ return listAll(lh).then(function(fs){ addNew(lh, fs); }); }));
       });
     }
-    var pLeg = !legH ? Promise.resolve() : Promise.all([listAll(legH), legacyCache(ctx.id)]).then(function(r){
-      var dirs = r[0].filter(function(e){ return e.kind === "directory"; }), L = r[1];
-      var names = {};
-      dirs.forEach(function(dh){
-        names[dh.name] = 1;
-        m.legacy.push({ dh: dh, canon: null });
-      });
-      // forget folders that have gone (moved by a tidy-up)
-      Object.keys(L.data.folders).forEach(function(n){ if (!names[n]) delete L.data.folders[n]; });
-      L.data.rootNames = Object.keys(names); L.data.rootAt = now();
-      legacySave(L, ctx.id);
-    });
-    var p = Promise.all([pNew, pLeg]).then(function(){ return m; });
+    var p = pNew.then(function(){ return m; });
     m.p = p;
     memos[k] = m;
     p.catch(function(){ if (memos[k] && memos[k].p === p) delete memos[k]; });
     return p;
-  }
-
-  // An old per-item folder's file names: from the device cache while fresh,
-  // otherwise listed (and remembered).
-  function legacyEntries(ctx, dh){
-    return legacyCache(ctx.id).then(function(L){
-      var f = L.data.folders[dh.name];
-      if (f && !ctx.force && (now() - f.at) < LEGACY_TTL && Array.isArray(f.names)){
-        return f.names.map(function(n){ return { h: null, parent: dh, real: n, layout: "legacy", cacheId: ctx.id }; });
-      }
-      return listAll(dh).then(function(es){
-        var files = es.filter(function(e){ return e.kind === "file"; });
-        L.data.folders[dh.name] = { at: now(), names: files.map(function(e){ return e.name; }) };
-        legacySave(L, ctx.id);
-        return files.map(function(e){ return { h: e, parent: dh, real: e.name, layout: "legacy" }; });
-      });
-    });
   }
 
   // ---------- Windows' 260-character path limit ----------
@@ -2716,26 +2947,7 @@
 
   // ---------- stand-in handles ----------
   function FileWrap(base, rec){ this.kind = "file"; this.name = base; this._rec = rec; }
-  // An old folder's file known only from the device's remembered list may
-  // have been moved since (a tidy-up on another PC): it then reads as an
-  // empty file -- which every app already skips -- and that folder is
-  // listed afresh next time.
-  function goneFile(name){
-    var f;
-    try{ f = new File([], name); }catch(e){ f = new Blob([]); }
-    return { kind: "file", name: name, getFile: function(){ return Promise.resolve(f); }, createWritable: function(){ return Promise.reject(notFound(name)); } };
-  }
-  FileWrap.prototype._real = function(){
-    var rec = this._rec;
-    if (rec.h) return Promise.resolve(rec.h);
-    return rec.parent.getFileHandle(rec.real, { create: false }).then(function(h){ rec.h = h; return h; }, function(err){
-      if (!isNotFound(err) || rec.layout !== "legacy" || !rec.cacheId) throw err;
-      return legacyCache(rec.cacheId).then(function(L){
-        var f = L.data.folders[rec.parent.name]; if (f) f.at = 0;
-        return goneFile(rec.real);
-      });
-    });
-  };
+  FileWrap.prototype._real = function(){ return Promise.resolve(this._rec.h); };
   FileWrap.prototype.getFile = function(){ return this._real().then(function(h){ return h.getFile(); }); };
   // A record file this session just created but whose writer can't be
   // opened (on Windows: the full path, plus Chrome's ".crswap" swap file, is
@@ -2765,14 +2977,10 @@
     this._listP = null;
   }
   ItemDir.prototype._merged = function(){
-    var self = this, g = this._g, ctx = this._root._ctx;
-    return Promise.all(g.legacy.map(function(dh){ return legacyEntries(ctx, dh); })).then(function(lists){
-      var out = {};
-      lists.forEach(function(l){ l.forEach(function(e){ if (!out[e.real]) out[e.real] = e; }); });
-      Object.keys(g.entries).forEach(function(b){ out[b] = g.entries[b]; });
-      self._last = out;
-      return out;
-    });
+    var out = {}, g = this._g;
+    Object.keys(g.entries).forEach(function(b){ out[b] = g.entries[b]; });
+    this._last = out;
+    return Promise.resolve(out);
   };
   ItemDir.prototype._files = function(){
     return this._merged().then(function(out){ return Object.keys(out).sort().map(function(b){ return new FileWrap(b, out[b]); }); });
@@ -2863,9 +3071,9 @@
     });
   };
 
-  function Root(ctx, newH, legH, o){
+  function Root(ctx, newH, o){
     this.kind = "directory"; this.name = ctx.branch;
-    this._ctx = ctx; this._newH = newH; this._legH = legH;
+    this._ctx = ctx; this._newH = newH;
     this._level = o.level == null ? null : o.level;
   }
   Root.prototype._newRoot = function(create){
@@ -2874,11 +3082,11 @@
     if (!create) return Promise.resolve(null);
     return this._ctx.dir([ROOT, this._ctx.branch], true).then(function(h){ self._newH = h; delete misses[self._ctx.id + "\u0000new"]; return h; });
   };
-  Root.prototype._groups = function(){ return scan(this._ctx, this._newH, this._legH, this._level).then(function(m){ return m.groups(); }); };
+  Root.prototype._groups = function(){ return scan(this._ctx, this._newH, this._level).then(function(m){ return m.groups(); }); };
   Root.prototype._dirs = function(){
     var self = this;
     return this._groups().then(function(groups){
-      return Object.keys(groups).sort().filter(function(c){ var g = groups[c]; return g.legacy.length || Object.keys(g.entries).length; })
+      return Object.keys(groups).sort().filter(function(c){ return Object.keys(groups[c].entries).length; })
         .map(function(c){ return new ItemDir(self, c, groups[c]); });
     });
   };
@@ -2904,48 +3112,25 @@
     var self = this, ctx = this._ctx, create = !!(opts && opts.create);
     var r = registry[key] || null, canon = canonOf(key);
     var lf = r ? levelFolder(r.level) : null;
-    // the new-layout files: from a whole-branch or this level's listing
+    // the files: from a whole-branch or this level's listing
     var all = !ctx.force && freshMemo(memoKey(ctx.id, null));
     var memoP;
-    if (all && all.newH === this._newH && all.legH === this._legH) memoP = all.p;
-    else if (lf != null && this._newH) memoP = scan(ctx, this._newH, null, r.level);
+    if (all && all.newH === this._newH) memoP = all.p;
+    else if (lf != null && this._newH) memoP = scan(ctx, this._newH, r.level);
     else if (this._newH){
       // v3: an item no app has named here -- its records may be in any level folder
-      memoP = scan(ctx, this._newH, null, null).then(function(m){
+      memoP = scan(ctx, this._newH, null).then(function(m){
         var g = m.groups()[canon];
         lf = (g && g.lf) || self._lfFor(canon, key);
         return m;
       });
     } else memoP = Promise.resolve(null);
-    var memo = null;
     return memoP.then(function(m){
-      memo = m;
       var groups = m ? m.groups() : {};
       var g = groups[canon];
       if (!g){ g = newGroup(lf); groups[canon] = g; if (m) m.made[canon] = lf; }
       if (lf && !g.lf) g.lf = lf;
-      // the item's old folder(s): the app's key, the canonical one, the ITPs' 80-character one
-      var cands = [key];
-      var full = r ? itemKey(r.level, r.room, r.code) : null;
-      if (full && cands.indexOf(full) < 0) cands.push(full);
-      if (r){ var k80 = itpKey(r.level, r.room, r.code); if (cands.indexOf(k80) < 0) cands.push(k80); }
-      var have = {}; g.legacy.forEach(function(dh){ have[dh.name] = 1; });
-      cands = cands.filter(function(n){ return !have[n]; });
-      if (!self._legH || !cands.length) return g;
-      return legacyCache(ctx.id).then(function(L){
-        var known = (!ctx.force && L.data.rootNames && (now() - L.data.rootAt) < LEGACY_TTL) ? L.data.rootNames : null;
-        if (known) cands = cands.filter(function(n){ return known.indexOf(n) >= 0; });
-        return Promise.all(cands.map(function(n){ return self._legH.getDirectoryHandle(n, { create: false }).then(null, softNull); }));
-      }).then(function(found){
-        (found || []).forEach(function(dh){
-          if (!dh || have[dh.name]) return;
-          have[dh.name] = 1; g.legacy.push(dh);
-          if (memo) memo.legacy.push({ dh: dh, canon: canon });
-        });
-        return g;
-      });
-    }).then(function(g){
-      if (!create && !g.legacy.length && !Object.keys(g.entries).length) throw notFound(key);
+      if (!create && !Object.keys(g.entries).length) throw notFound(key);
       return new ItemDir(self, canon, g, key);
     });
   };
@@ -2960,133 +3145,19 @@
   //      that level's new-layout folder is listed), force }
   function root(o){
     var ctx = new Ctx(o);
-    var mNew = ctx.id + "\u0000new", mLeg = ctx.id + "\u0000leg", t = now();
-    function look(segs, create){
-      return ctx.dir(segs, create).then(function(h){ return { h: h }; }, function(err){ if (isNotFound(err)) return { h: null, miss: true }; throw err; });
-    }
-    // A missing new-layout folder is asked again after a few seconds; a
-    // missing old-layout folder is only taken as read for a minute on a
-    // project that already has the new one (only an out-of-date app could
-    // still make it).
-    var newP = (!o.create && !ctx.force && misses[mNew] && t - misses[mNew] < MISS_MS) ? Promise.resolve({ h: null, miss: true, memo: true }) : look([ROOT, o.branch], !!o.create);
-    var legP = (!ctx.force && misses[mLeg] && t - misses[mLeg] < LEG_MISS_MS) ? Promise.resolve({ h: null, miss: true, memo: true }) : look([o.branch], false);
-    return Promise.all([newP, legP]).then(function(r){
-      if (!r[0].memo){ if (r[0].miss) misses[mNew] = now(); else delete misses[mNew]; }
-      if (!r[1].memo){ if (r[1].miss && r[0].h) misses[mLeg] = now(); else delete misses[mLeg]; }
-      if (!r[0].h && !r[1].h && !o.create) throw notFound(o.branch);
-      return new Root(ctx, r[0].h, r[1].h, o);
+    var mNew = ctx.id + "\u0000new", t = now();
+    // A missing folder is asked again after a few seconds
+    var newP = (!o.create && !ctx.force && misses[mNew] && t - misses[mNew] < MISS_MS) ? Promise.resolve({ h: null, miss: true, memo: true })
+      : ctx.dir([ROOT, o.branch], !!o.create).then(function(h){ return { h: h }; }, function(err){ if (isNotFound(err)) return { h: null, miss: true }; throw err; });
+    return newP.then(function(r){
+      if (!r.memo){ if (r.miss) misses[mNew] = now(); else delete misses[mNew]; }
+      if (!r.h && !o.create) throw notFound(o.branch);
+      return new Root(ctx, r.h, o);
     });
   }
 
-
-  // Forget the short-lived listings; with { old: true } also the device's
-  // remembered lists of old folders (they are listed again next time).
-  function refresh(o){
-    memos = {}; misses = {};
-    if (!(o && o.old)) return;
-    Object.keys(legacyMem).forEach(function(id){
-      var L = legacyMem[id];
-      L.p.then(function(){ L.data.rootAt = 0; Object.keys(L.data.folders).forEach(function(n){ L.data.folders[n].at = 0; }); });
-    });
-  }
-
-  // ---------- tidy-up: move old per-item records into the level folders ----------
-  function readText(fh){ return fh.getFile().then(function(f){ return f.text().then(function(t){ return { size: f.size, text: t }; }); }); }
-  function writeText(dirH, name, text){
-    return dirH.getFileHandle(name, { create: true }).then(function(fh){
-      return fh.createWritable().then(function(w){ return w.write(text).then(function(){ return w.close(); }); }).then(function(){ return fh; });
-    });
-  }
-  // o: { dir, cacheId, branches (default all), onProgress({ branch, done, total, moved }) }
-  // -> { moved, removedFolders, left: [{ branch, folder, name, why }] }
-  function tidy(o){
-    var out = { moved: 0, removedFolders: 0, left: [] };
-    var branches = o.branches || BRANCHES;
-    var chain = Promise.resolve();
-    branches.forEach(function(branch){
-      chain = chain.then(function(){ return tidyBranch(o, branch, out); });
-    });
-    return chain.then(function(){ refresh({ old: true }); return out; });
-  }
-  function tidyBranch(o, branch, out){
-    var id = String(o.cacheId || "") + "\u0000" + branch;
-    return o.dir([branch], false).then(function(legH){
-      return o.dir([ROOT, branch], true).then(function(newH){
-        var levelDirs = {};
-        function levelDir(lf){ return levelDirs[lf] || (levelDirs[lf] = newH.getDirectoryHandle(lf, { create: true })); }
-        return listAll(legH).then(function(es){
-          var folders = es.filter(function(e){ return e.kind === "directory"; });
-          var done = 0, total = folders.length;
-          function report(){ if (o.onProgress) try{ o.onProgress({ branch: branch, done: done, total: total, moved: out.moved }); }catch(e){} }
-          report();
-          function oneFile(dh, fh){
-            if (!/\.json$/i.test(fh.name)){ out.left.push({ branch: branch, folder: dh.name, name: fh.name, why: "not a record" }); return Promise.resolve(false); }
-            return readText(fh).then(function(r){
-              if (!r.size || !r.text){ out.left.push({ branch: branch, folder: dh.name, name: fh.name, why: "empty -- a save that never finished" }); return false; }
-              var ev;
-              try{ ev = JSON.parse(r.text); }catch(e){ ev = null; }
-              if (!ev || typeof ev !== "object" || ev.level == null){ out.left.push({ branch: branch, folder: dh.name, name: fh.name, why: "couldn't be read" }); return false; }
-              // v3 (2026-10-01, code-only file names): an old per-item folder is named by the item's app key
-              // (its file name), so its records go under that name, as every new record does
-              var lf = levelFolder(ev.level), known = registry[dh.name];
-              var canon = known ? known.canon : nameKey(itemKey(ev.level, ev.room, ev.joineryId));
-              var target = (known ? leadOf(canon) : shortOf(canon, lf)) + SEP + fh.name, longName = canon + SEP + fh.name;
-              return levelDir(lf).then(function(lh){
-                // already moved under the long (pre-v2.1) name?
-                return lh.getFileHandle(longName, { create: false }).then(function(th){ return readText(th).then(function(t){ return t.text === r.text; }); }, function(err){ if (!isNotFound(err)) throw err; return false; }).then(function(there){
-                  if (there) return true;
-                  return lh.getFileHandle(target, { create: false }).then(function(th){
-                    return readText(th).then(function(t){
-                      if (t.text === r.text) return true;
-                      if (!t.size) return writeText(lh, target, r.text).then(function(){ return readText(th); }).then(function(t2){ return t2.text === r.text; });
-                      out.left.push({ branch: branch, folder: dh.name, name: fh.name, why: "a different record with the same name is already in the new place" });
-                      return false;
-                    });
-                  }, function(err){
-                    if (!isNotFound(err)) throw err;
-                    return writeText(lh, target, r.text).then(function(th){ return readText(th); }).then(function(t){ return t.text === r.text; });
-                  });
-                });
-              }).then(function(ok){
-                if (!ok) return false;
-                return dh.removeEntry(fh.name).then(function(){ out.moved++; return true; });
-              });
-            }).catch(function(err){
-              out.left.push({ branch: branch, folder: dh.name, name: fh.name, why: (err && (err.name || err.message)) || "error" });
-              return false;
-            });
-          }
-          function oneFolder(dh){
-            return listAll(dh).then(function(fs){
-              var files = fs.filter(function(f){ return f.kind === "file"; });
-              var c = Promise.resolve();
-              files.forEach(function(fh){ c = c.then(function(){ return oneFile(dh, fh); }); });
-              return c.then(function(){ return listAll(dh); }).then(function(rest){
-                if (rest.length) return;
-                return legH.removeEntry(dh.name).then(function(){ out.removedFolders++; }, function(){});
-              });
-            }).catch(function(err){
-              out.left.push({ branch: branch, folder: dh.name, name: "", why: (err && (err.name || err.message)) || "error" });
-            }).then(function(){ done++; report(); });
-          }
-          var i = 0;
-          function lane(){ if (i >= folders.length) return Promise.resolve(); var dh = folders[i++]; return oneFolder(dh).then(lane); }
-          return Promise.all([lane(), lane(), lane(), lane()]);
-        });
-      });
-    }, function(err){ if (isNotFound(err)) return; throw err; }).then(function(){
-      return legacyCache(id).then(function(L){ L.data.folders = {}; L.data.rootAt = 0; L.data.rootNames = null; legacySave(L, id); });
-    });
-  }
-  // How many old per-item folders a project still has (for the Projects hint).
-  function countLegacy(o){
-    var n = 0;
-    return Promise.all((o.branches || BRANCHES).map(function(branch){
-      return o.dir([branch], false).then(function(h){
-        return listAll(h).then(function(es){ n += es.filter(function(e){ return e.kind === "directory"; }).length; });
-      }, function(err){ if (!isNotFound(err)) throw err; });
-    })).then(function(){ return n; });
-  }
+  // Forget the short-lived listings.
+  function refresh(){ memos = {}; misses = {}; }
 
   // A Refresh button always reads the folders afresh (not the few-second
   // listing the last read left behind).
@@ -3105,8 +3176,8 @@
   window.UtzEvents = {
     version: 3,
     ROOT: ROOT, SEP: SEP, BRANCHES: BRANCHES, NEEDS_REL: NEEDS_REL, WIN_FULL: WIN_FULL,
-    itemKey: itemKey, nameKey: nameKey, levelFolder: levelFolder, itpKey: itpKey, shortOf: shortOf, leadOf: leadOf, tinyOf: tinyOf, compactBase: compactBase, LEVEL_MAX: LEVEL_MAX,
-    remember: remember, where: whereKey, root: root, refresh: refresh, tidy: tidy, countLegacy: countLegacy, pathBudget: pathBudget,
+    nameKey: nameKey, levelFolder: levelFolder, shortOf: shortOf, leadOf: leadOf, tinyOf: tinyOf, compactBase: compactBase, LEVEL_MAX: LEVEL_MAX,
+    remember: remember, where: whereKey, root: root, refresh: refresh, pathBudget: pathBudget,
     _registry: registry, _memos: function(){ return memos; }, _probes: probes
   };
 })();
@@ -3120,8 +3191,7 @@
    login, currently it just loads to the last user that was logged in, some of
    these tablets will have multiple users (employees)". Decided with Andrew:
    ask on a fresh launch AND again when the app was left in the background for
-   10 minutes or more; tablets and phones only (a PC keeps the last user, as
-   before).
+   10 minutes or more; every device, a PC included (changed 2026-10-04).
    What stays the same: the saved name (utzline-identity) is still the one
    thing every app on the device reads to stamp saves. What changes: on a
    tablet / phone the saved name is only "the last person", not "who's using
@@ -3142,6 +3212,15 @@
     if (window.__utzSignInForce === false) return false;
     var ua = navigator.userAgent || "";
     return /Android|iPhone|iPad|iPod/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  }
+  // (2026-10-04) Andrew: "on windows nothing asks what user is using when opening the app" -- every device
+  // asks now, a PC included (an automated browser, i.e. the tests, is skipped unless a test forces it on).
+  function active(){
+    if (window.__utzSignInForce === true) return true;
+    if (window.__utzSignInForce === false) return false;
+    if (isLight()) return true;
+    try { if (navigator.webdriver) return false; } catch (e) {}
+    return true;
   }
   function awayMs(){
     var t = window.__utzSignInAwayMs;
@@ -3174,7 +3253,7 @@
      Later calls never clear a name somebody just signed in with. */
   function boot(savedName){
     savedName = String(savedName || "");
-    if (!isLight()) return savedName;
+    if (!active()) return savedName;
     if (!S.booted){
       S.booted = true;
       var s = readSession();
@@ -3301,10 +3380,10 @@
      the list yet there is nothing to pick, so it waits (the app's own
      "Set your name" / add-a-name flow works as before). */
   function check(names){
-    if (!isLight() || !S.booted) return Promise.resolve();
+    if (!active() || !S.booted) return Promise.resolve();
     if (!S.locked) return Promise.resolve();
     if (curName()){ unlocked(); return Promise.resolve(); }     // they signed in another way (added a name)
-    var have = Promise.resolve(names && names.length ? names : (A && A.readUsers ? A.readUsers().then(function(rows){ return (rows || []).map(function(r){ return r.name; }).filter(Boolean); }, function(){ return []; }) : []));
+    var have = Promise.resolve(names && names.length ? names : (A && A.readUsers ? A.readUsers().then(function(rows){ return window.UtzUsers ? UtzUsers.filterNames(rows || []) : (rows || []).map(function(r){ return r.name; }).filter(Boolean); }, function(){ return []; }) : []));
     return have.then(function(list){
       if (!S.locked) return;
       if (!list.length) { hideGate(); return; }
@@ -3314,7 +3393,7 @@
     });
   }
   function lock(){
-    if (!isLight() || !A) return;
+    if (!active() || !A) return;
     S.staleName = curName() || S.staleName;
     S.locked = true; S.pendingName = "";
     writeSession({ name: "", hiddenAt: 0 });
@@ -3324,11 +3403,11 @@
 
   /* ---- leaving / coming back ---- */
   function onHide(){
-    if (!isLight() || !S.booted) return;
+    if (!active() || !S.booted) return;
     writeSession({ name: S.locked ? "" : curName(), hiddenAt: Date.now() });
   }
   function onShow(){
-    if (!isLight() || !S.booted) return;
+    if (!active() || !S.booted) return;
     var s = readSession();
     if (!S.locked && s && s.hiddenAt && (Date.now() - s.hiddenAt) >= awayMs()){ lock(); return; }
     if (!S.locked){
@@ -3350,7 +3429,7 @@
 
   // the early cover (see drawHold): tablets / phones only; not for a reload / back-forward of a page that is already signed in
   (function earlyHold(){
-    if (!isLight()) return;
+    if (!active()) return;
     var s0 = readSession();
     if (sameVisit() && s0 && s0.name) return;
     if (document.body) drawHold();
@@ -3368,6 +3447,7 @@
     check: check,
     lock: lock,
     isLight: isLight,                 // tablet or phone (also used to hide PC-only bits)
+    active: active,                   // whether this device asks who is using it (every device now)
     isLocked: function(){ return !!S.locked; },
     isShowing: function(){ return !!S.showing; },
     _away: function(){ return awayMs(); }
@@ -3376,6 +3456,320 @@
 /* UTZLINE-SIGNIN END */
 </script>
 <!-- UTZLINE-SIGNIN END -->
+<!-- UTZLINE-USERS BEGIN (generated from shared/users -- don't edit here) -->
+<script>
+/* ============================== UTZLINE users: which apps list a name + admin approval of new names (2026-10-04) ==============================
+   1. Andrew: "the show users only on certain apps never worked, it always showed them on all". utzline-users.csv's third column
+      (ShowInApps, "InstallITP;Scheduler") was saved but no app read it. Now each app's names list (the sign-in cover, the name
+      button, an ITP's sign-off picker) only lists a name whose ShowInApps has this app -- except:
+        - a row with nothing in ShowInApps (older rows) shows everywhere, as before;
+        - an administrator (utzline-admins.json, else Andrew Utz) shows everywhere;
+        - the name already signed in on this device always shows (nobody is thrown out mid-shift).
+   2. Andrew: "when users get added, admin (currently andrew) gets a notification to approve". A name added on a device is not
+      written to utzline-users.csv straight away: it goes to utzline-users-pending.json (beside it, PIN already scrambled) and the
+      person is told it is waiting for approval. The next time an administrator is signed in to any app (on opening, signing in
+      or coming back to it) a "New name to approve" box comes up: the apps it shows in can be changed, then Approve (the row is
+      added to utzline-users.csv) or Decline. Nothing is deleted: the request stays in the file marked approved / declined.
+      Exceptions so nobody is ever locked out: no administrator in utzline-users.csv yet (a new setup), or an administrator is
+      the one signed in on this device -> the name is added straight away, as before.
+   UtzUsers.init({ appCode, getRoot, getName, readUsers, writeUsers, toast, refresh })   once per app (refresh: re-list the names)
+   UtzUsers.filterNames(rows) -> names for this app                         UtzUsers.APP_CODES -> [[code, label], ...]
+   UtzUsers.needsApproval(rows) -> bool (sync; admins read at init)        UtzUsers.request({ name, pin, showInApps }) -> Promise
+   UtzUsers.poke()  -- look for requests now (the app calls it after its names list is (re)read)
+   UtzUsers.openUsers() -- the Users screen (administrator PIN): administrators, apps per name, names waiting
+   Plain ES5. Needs UtzPin (shared/admin-gate) for the PIN scrambling. */
+(function(){
+  "use strict";
+  if (window.UtzUsers) return;
+  var APP_CODES = [
+    ["SiteMeasure", "Site Measure"], ["Viewer", "Viewer"], ["Projects", "Projects"], ["Scheduler", "Scheduler"],
+    ["MachineSchedule", "Machine Schedule"], ["SolidSurfaceSchedule", "Solid Surface Schedule"],
+    ["ManufactureITP", "Manufacture ITP"], ["DeliveryITP", "Delivery ITP"], ["InstallITP", "Install ITP"]
+  ];
+  var DEFAULT_ADMINS = ["Andrew Utz"], ADMIN_FILE = "utzline-admins.json", PENDING_FILE = "utzline-users-pending.json";
+  var cfg = null, admins = DEFAULT_ADMINS.slice(), adminsAt = 0, busy = false, shownFor = {};
+  function low(s){ return String(s == null ? "" : s).trim().toLowerCase(); }
+  function isAdminName(n){ var l = low(n); return !!l && admins.some(function(a){ return low(a) === l; }); }
+  // a ShowInApps entry may be the code ("InstallITP") or the name as typed in the spreadsheet ("Install ITP", "install itp",
+  // "Solid Surface") -- compared without spaces / punctuation / capitals, and a name that is the start of the code counts
+  function norm(s){ return String(s == null ? "" : s).toLowerCase().replace(/[^a-z0-9]/g, ""); }
+  function sameApp(entry, code){
+    var e = norm(entry), c = norm(code);
+    if (!e || !c) return false;
+    if (e === c) return true;
+    var label = (APP_CODES.filter(function(p){ return p[0] === code; })[0] || [0, ""])[1];
+    if (label && e === norm(label)) return true;
+    return e.length >= 6 && c.indexOf(e) === 0; // "Solid Surface" -> SolidSurfaceSchedule, "Machine" is too short to guess
+  }
+  function codesOf(row){ return String((row && row.showInApps) || "").split(/[;,|]/).map(function(x){ return x.trim(); }).filter(Boolean); }
+  function root(){ try{ return cfg && cfg.getRoot ? cfg.getRoot() : null; }catch(e){ return null; } }
+  function me(){ try{ return (cfg && cfg.getName && cfg.getName()) || ""; }catch(e){ return ""; } }
+  function toast(m){ if (cfg && cfg.toast) try{ cfg.toast(m); }catch(e){} }
+  function readText(dir, name){ return dir.getFileHandle(name, { create: false }).then(function(fh){ return fh.getFile(); }).then(function(f){ return f.text(); }); }
+  function writeText(dir, name, text){
+    return dir.getFileHandle(name, { create: true }).then(function(fh){ return fh.createWritable(); }).then(function(w){ return Promise.resolve(w.write(text)).then(function(){ return w.close(); }); });
+  }
+  function loadAdmins(){
+    var r = root(); if (!r) return Promise.resolve(admins);
+    if (Date.now() - adminsAt < 60000) return Promise.resolve(admins);
+    return readText(r, ADMIN_FILE).then(function(t){
+      var j = JSON.parse(t), a = Array.isArray(j) ? j : (j && j.admins);
+      a = Array.isArray(a) ? a.map(function(x){ return String(x || "").trim(); }).filter(Boolean) : [];
+      admins = a.length ? a : DEFAULT_ADMINS.slice();
+    }).catch(function(){ admins = DEFAULT_ADMINS.slice(); }).then(function(){ adminsAt = Date.now(); return admins; });
+  }
+
+  // ---- 1. which names this app lists ----
+  function showsHere(row){
+    if (!row || !row.name) return false;
+    var cs = codesOf(row);
+    if (!cs.length || isAdminName(row.name) || low(row.name) === low(me())) return true;
+    var code = cfg && cfg.appCode;
+    if (!code) return true;
+    return cs.some(function(c){ return sameApp(c, code); });
+  }
+  function filterNames(rows){ return (rows || []).filter(showsHere).map(function(r){ return r.name; }).filter(Boolean); }
+
+  // ---- 2. approval ----
+  function needsApproval(rows){
+    if (isAdminName(me())) return false;                                   // an administrator is adding the name
+    return (rows || []).some(function(r){ return r && isAdminName(r.name); }); // no administrator set up yet -> nobody to approve it
+  }
+  function readPending(){
+    var r = root(); if (!r) return Promise.reject(new Error("No folder"));
+    return readText(r, PENDING_FILE).then(function(t){ var j = JSON.parse(t); return Array.isArray(j) ? j : (j && Array.isArray(j.requests) ? j.requests : []); }, function(err){
+      if (err && (err.name === "NotFoundError" || /not ?found/i.test(String(err.message || "")))) return [];
+      throw err; // unreadable: never overwrite it
+    });
+  }
+  function writePending(list){ var r = root(); return writeText(r, PENDING_FILE, JSON.stringify(list, null, 1)); }
+  function request(o){
+    return readPending().then(function(list){
+      list = list.filter(function(x){ return !(x && !x.decision && low(x.name) === low(o.name)); }); // a second try replaces the first (PIN may have changed)
+      list.push({ name: o.name, pin: window.UtzPin ? UtzPin.stored(o.pin) : o.pin, showInApps: o.showInApps || "", app: (cfg && cfg.appCode) || "",
+        at: new Date().toISOString(), device: (navigator.userAgent || "").replace(/^.*?\(([^)]*)\).*$/, "$1").slice(0, 60) });
+      return writePending(list);
+    });
+  }
+  function css(){
+    if (document.getElementById("utzUsersCss")) return;
+    var st = document.createElement("style"); st.id = "utzUsersCss";
+    st.textContent = [
+      ".uzu-bd{position:fixed;inset:0;z-index:2147482000;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px;}",
+      ".uzu{background:var(--panel,var(--surface-1,#1c2125));color:var(--text,var(--text-primary,#eee));border:1px solid var(--border,#444);border-radius:12px;max-width:460px;width:100%;max-height:90vh;overflow:auto;padding:16px 18px;font-size:14.5px;}",
+      ".uzu h2{margin:0 0 4px;font-size:18px;}.uzu p{margin:4px 0 10px;color:var(--muted,#aab);}",
+      ".uzu label{display:flex;align-items:center;gap:8px;padding:5px 0;}.uzu input{width:20px;height:20px;}",
+      ".uzu .uzu-btns{display:flex;gap:10px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap;}",
+      ".uzu button{font:inherit;min-height:42px;padding:6px 16px;border-radius:8px;border:1px solid var(--border,#555);background:transparent;color:inherit;cursor:pointer;}",
+      ".uzu button.uzu-ok{background:#2f7d4f;border-color:#2f7d4f;color:#fff;font-weight:600;}.uzu button.uzu-no{color:#e77;}",
+      ".uzu.uzu-wide{max-width:640px;}.uzu-user{border-top:1px solid var(--border,#444);padding:8px 0;}.uzu-user:first-child{border-top:0;}",
+      ".uzu-user-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}.uzu-user-head b{flex:1;min-width:120px;overflow-wrap:anywhere;}",
+      ".uzu-user-head label{padding:0;}.uzu-apps-btn{min-height:36px !important;padding:4px 12px !important;font-size:13px !important;}",
+      ".uzu-user-apps{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:0 12px;margin:6px 0 0 4px;}.uzu-user-apps[hidden]{display:none;}",
+      ".uzu-sub{font-size:13px;color:var(--muted,#aab);margin:2px 0 0;}.uzu h3{margin:14px 0 4px;font-size:15px;}.uzu-err{color:#e77;font-size:13.5px;min-height:1.2em;margin:8px 0 0;}",
+      ".utz-users-pill{position:fixed;bottom:12px;z-index:5;font:inherit;font-size:12px;line-height:1.2;padding:5px 11px;border-radius:999px;border:1px solid rgba(128,128,128,.45);background:rgba(128,128,128,.16);color:inherit;opacity:.8;cursor:pointer;width:auto;min-height:0;touch-action:manipulation;}",
+      ".utz-users-pill:hover,.utz-users-pill:focus{opacity:1}.utz-users-pill[hidden]{display:none}"
+    ].join("\n");
+    document.head.appendChild(st);
+  }
+  function ask(req, left){
+    css();
+    return new Promise(function(resolve){
+      var bd = document.createElement("div"); bd.className = "uzu-bd";
+      var have = codesOf(req);
+      bd.innerHTML = '<div class="uzu" role="dialog"><h2>New name to approve</h2><p></p><div class="uzu-apps"></div>' +
+        '<div class="uzu-btns"><button type="button" data-a="later">Later</button><button type="button" class="uzu-no" data-a="decline">Decline</button><button type="button" class="uzu-ok" data-a="approve">Approve</button></div></div>';
+      var when = ""; try{ when = new Date(req.at).toLocaleString(); }catch(e){}
+      var appLabel = (APP_CODES.filter(function(p){ return p[0] === req.app; })[0] || [0, req.app || "an app"])[1];
+      bd.querySelector("p").textContent = "“" + req.name + "” was added on " + appLabel + (when ? " · " + when : "") + (left > 1 ? " (" + left + " waiting)" : "") + ". Show this name in:";
+      var box = bd.querySelector(".uzu-apps");
+      APP_CODES.forEach(function(p){
+        var l = document.createElement("label"), cb = document.createElement("input"); cb.type = "checkbox"; cb.value = p[0];
+        cb.checked = have.some(function(c){ return sameApp(c, p[0]); });
+        l.appendChild(cb); l.appendChild(document.createTextNode(p[1])); box.appendChild(l);
+      });
+      bd.addEventListener("click", function(e){
+        var b = e.target.closest && e.target.closest("[data-a]"); if (!b) return;
+        var apps = Array.prototype.slice.call(box.querySelectorAll("input:checked")).map(function(c){ return c.value; });
+        bd.remove(); resolve({ action: b.getAttribute("data-a"), apps: apps });
+      });
+      document.body.appendChild(bd);
+    });
+  }
+  function decide(req, d){
+    // re-read both files right before writing (another device may have answered it meanwhile)
+    return readPending().then(function(list){
+      var cur = list.filter(function(x){ return x && !x.decision && low(x.name) === low(req.name) && x.at === req.at; })[0];
+      if (!cur) return "gone";
+      var done = function(){ cur.decision = d.action === "approve" ? "approved" : "declined"; cur.decidedBy = me(); cur.decidedAt = new Date().toISOString(); if (d.action === "approve") cur.showInApps = d.apps.join(";"); return writePending(list); };
+      if (d.action !== "approve") return done().then(function(){ return "declined"; });
+      return cfg.readUsers().then(function(rows){
+        if (rows.some(function(r){ return low(r.name) === low(cur.name); })) return done().then(function(){ return "exists"; });
+        rows.push({ name: cur.name, pin: cur.pin, showInApps: d.apps.join(";") });
+        return cfg.writeUsers(rows).then(done).then(function(){ return "approved"; });
+      });
+    });
+  }
+  function poke(){
+    if (!cfg || busy || !root()) return Promise.resolve();
+    busy = true;
+    return loadAdmins().then(function(){
+      if (!isAdminName(me())) return;
+      return readPending().then(function(list){
+        var waiting = list.filter(function(x){ return x && !x.decision && !shownFor[x.name + "|" + x.at]; });
+        var i = 0;
+        function next(){
+          if (i >= waiting.length) return;
+          var req = waiting[i++];
+          return ask(req, waiting.length - i + 1).then(function(d){
+            if (d.action === "later"){ shownFor[req.name + "|" + req.at] = 1; return next(); } // asked again next time the app is opened
+            return decide(req, d).then(function(res){
+              if (res === "approved" && cfg.refresh) try{ cfg.refresh(); }catch(e){}
+              toast(res === "approved" ? "“" + req.name + "” approved — they can sign in now." : res === "declined" ? "“" + req.name + "” declined." :
+                res === "exists" ? "“" + req.name + "” is already in the names list." : "That request was already answered on another device.");
+            }, function(err){ console.error("Approving a name failed:", err); toast("Couldn't save that — try again in a moment."); shownFor[req.name + "|" + req.at] = 1; }).then(next);
+          });
+        }
+        return next();
+      });
+    }).catch(function(err){ console.error("Checking names to approve failed:", err); }).then(function(){ busy = false; });
+  }
+
+  // ---- 3. (2026-10-04) Andrew: "add the option for me to add another administrator" -- the Users screen ----
+  // A "Users" pill beside "Change folder" (bottom right). An administrator's PIN opens it: every name in utzline-users.csv with an
+  // "Administrator" tick and the apps it shows in, and any names waiting for approval. Save writes utzline-admins.json (the list the
+  // Change folder PIN and the approvals use) and the ShowInApps column. Nobody is deleted here, and there is always one administrator.
+  function writeAdmins(list){
+    var r = root();
+    return writeText(r, ADMIN_FILE, JSON.stringify({ admins: list, updatedBy: me(), updatedAt: new Date().toISOString() }, null, 1)).then(function(){ admins = list.slice(); adminsAt = Date.now(); });
+  }
+  function openManage(){
+    if (!cfg || !root()) return;
+    var gate = window.UtzAdminGate ? UtzAdminGate.require(cfg.getRoot, "Managing names and administrators needs an administrator's PIN.") : Promise.resolve(true);
+    return gate.then(function(ok){
+      if (!ok) return;
+      adminsAt = 0;
+      return Promise.all([cfg.readUsers(), loadAdmins(), readPending().catch(function(){ return []; })]).then(function(r){ showManage(r[0] || [], r[2] || []); });
+    }).catch(function(err){ console.error("Opening Users failed:", err); toast("Couldn't read the names list just now — try again in a moment."); });
+  }
+  function showManage(rows, pending){
+    css();
+    var bd = document.createElement("div"); bd.className = "uzu-bd";
+    bd.innerHTML = '<div class="uzu uzu-wide" role="dialog" aria-label="Users"><h2>Users</h2><p>Tick who is an <b>administrator</b> (they can approve new names, change the Projects folder and open this screen), and the apps each name shows in. Nobody is removed here.</p>' +
+      '<div class="uzu-list"></div><div class="uzu-wait"></div><p class="uzu-err"></p><div class="uzu-btns"><button type="button" data-a="cancel">Cancel</button><button type="button" class="uzu-ok" data-a="save">Save</button></div></div>';
+    var listEl = bd.querySelector(".uzu-list"), errEl = bd.querySelector(".uzu-err");
+    var sorted = rows.filter(function(r){ return r && r.name; }).slice().sort(function(a, b){ return low(a.name) < low(b.name) ? -1 : low(a.name) > low(b.name) ? 1 : 0; });
+    sorted.forEach(function(r){
+      var row = document.createElement("div"); row.className = "uzu-user"; row.setAttribute("data-name", r.name);
+      var have = codesOf(r);
+      row.innerHTML = '<div class="uzu-user-head"><b></b><label><input type="checkbox" class="uzu-admin"> Administrator</label><button type="button" class="uzu-apps-btn"></button></div>' +
+        '<p class="uzu-sub"></p><div class="uzu-user-apps" hidden></div>';
+      row.querySelector("b").textContent = r.name;
+      row.querySelector(".uzu-admin").checked = isAdminName(r.name);
+      var appsEl = row.querySelector(".uzu-user-apps"), subEl = row.querySelector(".uzu-sub"), btn = row.querySelector(".uzu-apps-btn");
+      APP_CODES.forEach(function(p){
+        var l = document.createElement("label"), cb = document.createElement("input"); cb.type = "checkbox"; cb.value = p[0];
+        cb.checked = have.some(function(c){ return sameApp(c, p[0]); });
+        l.appendChild(cb); l.appendChild(document.createTextNode(p[1])); appsEl.appendChild(l);
+      });
+      function summary(){
+        var on = Array.prototype.slice.call(appsEl.querySelectorAll("input:checked")).map(function(c){ return (APP_CODES.filter(function(p){ return p[0] === c.value; })[0] || [0, c.value])[1]; });
+        subEl.textContent = row.querySelector(".uzu-admin").checked ? "Administrator: shows in every app" : (on.length ? "Shows in: " + on.join(", ") : "No apps ticked: shows in every app");
+      }
+      btn.textContent = "Apps";
+      btn.addEventListener("click", function(){ appsEl.hidden = !appsEl.hidden; btn.textContent = appsEl.hidden ? "Apps" : "Hide apps"; });
+      row.addEventListener("change", summary); summary();
+      listEl.appendChild(row);
+    });
+    if (!sorted.length) listEl.innerHTML = '<p class="uzu-sub">No names yet.</p>';
+    var waiting = (pending || []).filter(function(x){ return x && !x.decision; });
+    if (waiting.length){
+      var w = bd.querySelector(".uzu-wait");
+      w.innerHTML = "<h3>Waiting for approval</h3>";
+      waiting.forEach(function(req){
+        var d = document.createElement("div"); d.className = "uzu-user";
+        d.innerHTML = '<div class="uzu-user-head"><b></b><button type="button" class="uzu-apps-btn">Approve or decline…</button></div>';
+        d.querySelector("b").textContent = req.name;
+        d.querySelector("button").addEventListener("click", function(){
+          bd.remove();
+          ask(req, 1).then(function(dd){
+            if (dd.action === "later") return openManage();
+            return decide(req, dd).then(function(res){
+              if (res === "approved" && cfg.refresh) try{ cfg.refresh(); }catch(e){}
+              toast(res === "approved" ? "“" + req.name + "” approved." : res === "declined" ? "“" + req.name + "” declined." : "That request was already answered.");
+            }, function(err){ console.error(err); toast("Couldn't save that — try again in a moment."); }).then(function(){ return openManage(); });
+          });
+        });
+        w.appendChild(d);
+      });
+    }
+    bd.addEventListener("click", function(e){
+      var b = e.target.closest && e.target.closest("[data-a]"); if (!b) return;
+      if (b.getAttribute("data-a") === "cancel"){ bd.remove(); return; }
+      var newAdmins = [], apps = {};
+      Array.prototype.forEach.call(listEl.querySelectorAll(".uzu-user"), function(row){
+        var n = row.getAttribute("data-name");
+        if (row.querySelector(".uzu-admin").checked) newAdmins.push(n);
+        apps[low(n)] = Array.prototype.slice.call(row.querySelectorAll(".uzu-user-apps input:checked")).map(function(c){ return c.value; });
+      });
+      if (!newAdmins.length){ errEl.textContent = "Keep at least one administrator."; return; }
+      b.disabled = true; errEl.textContent = "Saving…";
+      // re-read the names right before writing (another device may have added one meanwhile); only ShowInApps changes
+      cfg.readUsers().then(function(fresh){
+        var changed = false;
+        (fresh || []).forEach(function(r){
+          var k = low(r.name); if (!(k in apps)) return;
+          var was = codesOf(r).filter(function(c){ return APP_CODES.some(function(p){ return sameApp(c, p[0]); }); }).map(function(c){ return (APP_CODES.filter(function(p){ return sameApp(c, p[0]); })[0])[0]; }).sort().join(";");
+          var now = apps[k].slice().sort().join(";");
+          if (was !== now){ r.showInApps = apps[k].join(";"); changed = true; }
+        });
+        var adminsChanged = newAdmins.map(low).sort().join("|") !== admins.map(low).sort().join("|");
+        return (changed ? cfg.writeUsers(fresh) : Promise.resolve()).then(function(){ return adminsChanged ? writeAdmins(newAdmins) : null; }).then(function(){
+          bd.remove();
+          if (cfg.refresh) try{ cfg.refresh(); }catch(e){}
+          toast(changed || adminsChanged ? "Saved. Administrators: " + newAdmins.join(", ") + "." : "Nothing changed.");
+        });
+      }).catch(function(err){
+        console.error("Saving users failed:", err); b.disabled = false;
+        errEl.textContent = "Couldn't save just now — nothing was changed. Try again in a moment.";
+      });
+    });
+    document.body.appendChild(bd);
+  }
+  // the pill sits just left of the app's own "Change folder" pill, and only when that one is showing
+  var pill = null;
+  function placePill(){
+    if (!cfg) return;
+    var cf = Array.prototype.filter.call(document.querySelectorAll(".utz-change-folder"), function(el){ return !el.hidden && el.getClientRects().length > 0; /* fixed-position: offsetParent is always null */ })[0];
+    if (!pill){
+      if (!document.body) return;
+      css();
+      pill = document.createElement("button"); pill.type = "button"; pill.className = "utz-users-pill"; pill.textContent = "Users"; pill.title = "Names, apps and administrators (needs an administrator PIN)";
+      pill.addEventListener("click", openManage);
+      document.body.appendChild(pill);
+    }
+    if (!cf || !root()){ pill.hidden = true; return; }
+    pill.hidden = false;
+    var r = cf.getBoundingClientRect();
+    pill.style.right = Math.max(12, Math.round(window.innerWidth - r.left + 8)) + "px";
+    pill.style.bottom = Math.max(4, Math.round(window.innerHeight - r.bottom)) + "px";
+  }
+  function init(o){
+    var first = !cfg;
+    cfg = o || {};
+    if (!first) return;
+    document.addEventListener("visibilitychange", function(){ if (document.visibilityState === "visible") setTimeout(poke, 800); });
+    setTimeout(function(){ loadAdmins(); }, 1500);
+    // someone signing in (any route: the sign-in cover, the name button, a new name) -> an administrator gets asked straight away
+    var last = null;
+    setInterval(function(){ var n = me(); if (n !== last){ last = n; if (n) poke(); } placePill(); }, 3000);
+    window.addEventListener("resize", function(){ placePill(); });
+    setTimeout(placePill, 600);
+  }
+  window.UtzUsers = { APP_CODES: APP_CODES, init: init, filterNames: filterNames, showsHere: showsHere, needsApproval: needsApproval, request: request, poke: poke, loadAdmins: loadAdmins, isAdmin: isAdminName, PENDING_FILE: PENDING_FILE, openUsers: openManage, ADMIN_FILE: ADMIN_FILE };
+})();
+</script>
+<!-- UTZLINE-USERS END -->
 <!-- UTZLINE-CHANGE-FOLDER BEGIN -->
 <style id="utzChangeFolderStyle">
 /* (2026-09-30) "move the change folder to the bottom right of the page, and smaller" */
@@ -3459,7 +3853,8 @@
    to have this fill colour as default" (a solid blue dot, black ring, white outer ring -- the Site
    Measure marker look) and "make the text and icons 25% smaller".
    One drawer for the joinery markers on the plan canvases of UTZLINE Projects, the Scheduler and the
-   Solid Surface Schedule (Machine Schedule keeps its own cut-progress markers -- Andrew: "dont change
+   Solid Surface Schedule -- and (2026-10-04) the marker TEXT in Machine Schedule and the three ITP apps too, so every app draws
+   item labels the same (Machine Schedule keeps its own cut-progress markers -- Andrew: "dont change
    icons in machine schedule"; Site Measure / Viewer keep their own renderer but share FILL and the
    scales below).
      UtzPlanMarker.FILL         "#0011ff" -- the default fill (from Andrew's swatch)
@@ -3530,11 +3925,11 @@
     var x = o.x, y = o.y, top = null;
     function pass(stroke, sw, fill, cls){
       var t = el("text", { x: x, y: y, "font-size": fs, fill: fill, "font-family": fontStack(o.family), "font-weight": 500,
-        transform: "rotate(" + (o.rot || 0) + " " + x + " " + y + ")", "text-anchor": o.anchor || "middle", "dominant-baseline": "middle",
+        transform: "rotate(" + (o.rot || 0) + " " + x + " " + y + ")", "text-anchor": o.anchor || "middle", // (2026-10-04) centred by an explicit 0.26 em shift (below), not dominant-baseline, which PDFs ignore -- same as Site Measure
         stroke: stroke, "stroke-width": sw, "stroke-linejoin": "round", "paint-order": "stroke fill", "class": cls, "data-marker-id": o.id });
       if (cls !== "marker-label") t.setAttribute("pointer-events", "none");
       else t.setAttribute("style", "font-size:" + fs + "px;font-weight:500"); // the apps' own .marker-label CSS (14px / 600) must not win
-      var dy0 = -((lines.length - 1) / 2) * fs * 1.28;
+      var dy0 = -((lines.length - 1) / 2) * fs * 1.28 + fs * 0.26;
       lines.forEach(function(line, i){
         var ts = el("tspan", { x: x, dy: i === 0 ? dy0 : fs * 1.28 });
         ts.textContent = line.length ? line : " ";
@@ -4120,6 +4515,7 @@
        - columns are identified by <th data-col>, else the header text, else their index
        - frozen (default 0): the first N columns can't be hidden or moved; fixedEnd (default: the trailing
          <th> with no text and no data-col, e.g. the row-actions column) likewise
+       - toggle: ids of frozen columns that stay in place but can still be ticked off (2026-10-04: the item "No.")
        - mountBefore: the button goes inside this element (the .tv-zoom bar) or before the table's box
      UtzColumns.apply(tableEl) / reset(tableEl) / state(tableEl) -> { order, hidden }
    Plain ES5. */
@@ -4155,7 +4551,7 @@
   function apply(t){
     var st = t && t.__utzCols; if (!st) return;
     var order = desiredOrder(st), hiddenSet = {};
-    st.hidden.forEach(function(id){ if (st.movable.indexOf(id) !== -1) hiddenSet[id] = true; });
+    st.hidden.forEach(function(id){ if (canHide(st, id)) hiddenSet[id] = true; });
     st.applying = true;
     try{
       var hr = headRow(t); if (hr) applyRow(st, hr, order, hiddenSet);
@@ -4164,12 +4560,21 @@
     if (st.btn) st.btn.classList.toggle("utz-cols-on", st.hidden.length > 0 || JSON.stringify(st.order) !== JSON.stringify(st.movable));
     if (st.onApply){ try{ st.onApply(t); }catch(e){} }
   }
+  function canHide(st, id){ return st.movable.indexOf(id) !== -1 || st.toggle.indexOf(id) !== -1; }
   function save(st){ if (st.storageKey) lsSet(st.storageKey, { order: st.order, hidden: st.hidden }); }
   function label(st, id){ var th = st.thById[id]; return th ? ((th.textContent || "").trim() || id) : id; }
   function buildPop(st){
     var pop = st.pop; pop.innerHTML = "";
     var h = document.createElement("div"); h.className = "utz-cols-head"; h.textContent = "Columns — tick to show, ▲ ▼ to move"; pop.appendChild(h);
     var order = desiredOrder(st).filter(function(id){ return st.movable.indexOf(id) !== -1; });
+    st.toggle.forEach(function(id){ // fixed in place: a tick box, no arrows
+      var row = document.createElement("div"); row.className = "utz-cols-row";
+      var lab = document.createElement("label");
+      var cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = st.hidden.indexOf(id) === -1; cb.setAttribute("data-col", id);
+      cb.addEventListener("change", function(){ var k = st.hidden.indexOf(id); if (cb.checked && k !== -1) st.hidden.splice(k, 1); else if (!cb.checked && k === -1) st.hidden.push(id); save(st); apply(st.table); });
+      var sp = document.createElement("span"); sp.textContent = label(st, id);
+      lab.appendChild(cb); lab.appendChild(sp); row.appendChild(lab); pop.appendChild(row);
+    });
     order.forEach(function(id, i){
       var row = document.createElement("div"); row.className = "utz-cols-row";
       var lab = document.createElement("label");
@@ -4206,11 +4611,12 @@
     var fixedEnd = o.fixedEnd;
     if (fixedEnd === undefined){ fixedEnd = 0; for (var k = ths.length - 1; k >= 0; k--){ var th = ths[k]; if (!th.getAttribute("data-col") && !(th.textContent || "").trim()) fixedEnd++; else break; } }
     var st = { table: t, ids: ids, thById: thById, front: ids.slice(0, frozen), end: fixedEnd ? ids.slice(ids.length - fixedEnd) : [], movable: ids.slice(frozen, ids.length - fixedEnd),
+               toggle: (o.toggle || []).filter(function(id){ return ids.slice(0, frozen).indexOf(id) !== -1; }),
                order: [], hidden: [], storageKey: o.storageKey || null, onApply: o.onApply || null, applying: false };
     var saved = st.storageKey ? lsGet(st.storageKey) : null;
     if (saved && typeof saved === "object"){
       if (Array.isArray(saved.order)) st.order = saved.order.filter(function(id){ return st.movable.indexOf(id) !== -1; });
-      if (Array.isArray(saved.hidden)) st.hidden = saved.hidden.filter(function(id){ return st.movable.indexOf(id) !== -1; });
+      if (Array.isArray(saved.hidden)) st.hidden = saved.hidden.filter(function(id){ return canHide(st, id); });
     }
     if (!st.order.length) st.order = st.movable.slice();
     t.__utzCols = st;
@@ -4461,7 +4867,7 @@
 
 <header>
   <img src="./icons/icon-192.png" alt="">
-  <div class="brand">UTZLINE Solid Surface Schedule<span class="rc-tag" title="Release candidate 1.0">RC 1.0</span><small>Solid Surface delivery &amp; manufacture dates</small></div>
+  <div class="brand">UTZ<b>LINE</b> Solid Surface Schedule<span class="rc-tag" title="Release candidate 1.0">RC 1.0</span><small>Solid Surface delivery &amp; manufacture dates</small></div>
 </header>
 
 <main>
@@ -4576,6 +4982,7 @@
       <table class="sched-table" id="overallTable">
         <thead>
           <tr>
+            <th data-col="itemNo" class="sticky-col" title="The item's 3-digit number (Columns: untick to hide)">No.</th>
             <th data-col="project" class="sticky-col">Project</th>
             <th data-col="level" class="sticky-col">Level</th>
             <th data-col="room" class="sticky-col">Room</th>
@@ -4653,6 +5060,7 @@
       <table class="sched-table" id="projTable">
         <thead>
           <tr>
+            <th data-col="itemNo" class="sticky-col" title="The item's 3-digit number (Columns: untick to hide)">No.</th>
             <th data-col="level" class="sticky-col">Level</th>
             <th data-col="room" class="sticky-col">Room</th>
             <th data-col="joineryId" class="sticky-col">Joinery ID</th>
@@ -4712,6 +5120,12 @@
     <div class="card" id="jiSubOrdersCard">
       <div class="section-title">Sub orders</div>
       <div id="jiSubOrdersList"></div>
+    </div>
+    <!-- (2026-10-04) Andrew: "need to be able to open itps from all joinery summary pages" -- the item's saved
+         Manufacture / Install / Delivery ITP PDFs, newest first, each with Open (same files as Machine Schedule's ITPs card). -->
+    <div class="card" id="jiItpsCard">
+      <div class="section-title">ITPs</div>
+      <div id="jiItpsList"></div>
     </div>
   </section>
 
@@ -7316,7 +7730,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
      delivered  { receivedDate, deliveryLocationPin?, locationSnapshot? }   (Delivery ITP, v22+)
      closed     {}                      (Install ITP "Save & close out", v43+)
      drafterAssigned { drafter }        (Viewer, 2026-09-30: the rework is flagged to a drafter)
-     flaggedTo       { group: "machineShop" | "factoryManagers" }
+     flaggedTo       { group: "machineShop" | "factoryManagers" | "manufacture" | "install" | "delivery" | "solidSurface" }
                                        (2026-10-02: who a rework is flagged with -- chosen when it is logged or later; a drafter is flagged
                                         with drafterAssigned above; flaggedTo hands it to a group and clears any drafter)
      drafterAction   { action: "resentToCnc" | "notRequired" | "passedOn", to?, fileName? }
@@ -7356,14 +7770,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
   // path limit). New writes go to "RW" / "RW Log"; the folders the earlier versions made ("Install ITP Rework" / "... Log") are still
   // READ and merged, and an item whose rework file is already in the old folder keeps writing there (one item = one file).
   var FLAT_DATA = ["Project Saves", "RW"];
-  var FLAT_LOG = ["Project Saves", "RW Log"];
   var FLAT_PDF = ["PDFs", "RW"];
-  // (2026-10-02) Andrew only has a dummy project, so the old "Install ITP Rework" folders are NOT read any more (set true to read them again).
-  var READ_OLD_FLAT = false;
-  var FLAT_DATA_OLD = ["Project Saves", "UTZLINE ITP", "Install ITP Rework"];
-  var FLAT_LOG_OLD = ["Project Saves", "UTZLINE ITP", "Install ITP Rework Log"];
-  var FLAT_PDF_OLD = ["PDF Files", "UTZLINE ITP", "Install ITP Rework"];
-  var LEGACY_ROOT = "itp-install-rework";
 
   /* ------------------------------ small helpers ------------------------------ */
   function p2(n){ return (n < 10 ? "0" : "") + n; }
@@ -7411,6 +7818,22 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
     segs.forEach(function(s){ p = p.then(function(h){ return h.getDirectoryHandle(s, { create: !!create }); }); });
     return p;
   }
+  /* (2026-10-04) Andrew: "everything needs to be separated by room / joinery item across all saves". One folder per item:
+       Project Saves\RW\<Level>\<Room>\<item>\<item>.json      the item's reworks
+       Project Saves\RW\<Level>\<Room>\<item>\Log\              their events
+       PDFs\RW\<Level>\<Room>\<item>\                            their PDFs (Older\ beside them)
+     (UtzItemFiles names the level / room folders, the same as PDFs\SD). A missing folder rejects NotFoundError, like dirPath. */
+  var RW_LOG = "Log";
+  function keyOfFile(fileName){ return String(fileName || "").replace(/\.json$/i, ""); }
+  function rwItemDir(projectHandle, rootSegs, key, create, loc){
+    var F = global.UtzItemFiles;
+    loc = loc && (loc.level || loc.room) ? loc : null;
+    return F.itemDir(projectHandle, rootSegs, key, !!create, loc).then(function(d){
+      if (d) return d;
+      var e = new Error("not found: " + key); e.name = "NotFoundError"; throw e;
+    });
+  }
+  function rowLoc(row){ return row && (row.level || row.room) ? { level: row.level || "", room: row.room || "" } : null; }
   function listEntries(dirH){
     var out = [];
     if (!dirH || typeof dirH.values !== "function") return Promise.resolve(out);
@@ -7526,25 +7949,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
       });
       return q;
     });
-    var legacy = projectHandle.getDirectoryHandle(LEGACY_ROOT, { create: false }).then(dirsIn, function(){ return []; }).then(function(levels){
-      var p = Promise.resolve();
-      levels.forEach(function(levelH){
-        p = p.then(function(){ return dirsIn(levelH); }).then(function(rooms){
-          var q = Promise.resolve();
-          rooms.forEach(function(roomH){
-            q = q.then(function(){ return jsonFiles(roomH); }).then(function(files){
-              return runQueue(files, function(fh){
-                var base = fh.name.replace(/\.json$/i, "");
-                return readFile(fh, { project: projectName, fileBase: base, fileName: fh.name, isFlat: false, level: levelH.name, room: roomH.name, levelDir: levelH.name, roomDir: roomH.name, code: base });
-              }, 1);
-            });
-          });
-          return q;
-        });
-      });
-      return p;
-    });
-    return flat.then(function(){ return legacy; }).then(function(){ return { rows: dedupeFlat(rows), unreadable: unreadable }; });
+    return flat.then(function(){ return { rows: dedupeFlat(rows), unreadable: unreadable }; });
   }
   // (2026-10-02) an item's rework file can in principle sit in both the new and the old folder (two devices on different versions): its
   // reworks are the union, a rework present in both counted once (the new folder's copy wins -- rows are listed new-folder first).
@@ -7561,59 +7966,36 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
     return out;
   }
   // The flat rework data folders that exist, new first: [{ dir, old }]
+  // (2026-10-04) every item folder under Project Saves\RW (each holds that item's <item>.json): [{ dir, old: false }]
   function dataDirsExisting(projectHandle){
-    return Promise.all([
-      dirPath(projectHandle, FLAT_DATA, false).then(function(d){ return { dir: d, old: false }; }, function(){ return null; }),
-      READ_OLD_FLAT ? dirPath(projectHandle, FLAT_DATA_OLD, false).then(function(d){ return { dir: d, old: true }; }, function(){ return null; }) : Promise.resolve(null)
-    ]).then(function(r){ return r.filter(Boolean); });
+    return global.UtzItemFiles.listItemDirs(projectHandle, FLAT_DATA).then(function(l){ return l.map(function(x){ return { dir: x.dir, old: false }; }); }, function(){ return []; });
   }
-  // The folder an item's rework file belongs in: the one that already holds it (so an item stays one file), else the new "RW" folder.
-  function itemDataDir(projectHandle, fileName, create){
-    return dataDirsExisting(projectHandle).then(function(list){
-      return Promise.all(list.map(function(x){ return x.dir.getFileHandle(fileName, { create: false }).then(function(){ return x; }, function(){ return null; }); })).then(function(found){
-        var hit = found.filter(Boolean)[0];
-        return hit ? hit.dir : dirPath(projectHandle, FLAT_DATA, !!create);
-      });
-    });
+  // (2026-10-04) the item's own folder (loc: { level, room } when the caller knows them, else from the items the app read)
+  function itemDataDir(projectHandle, fileName, create, loc){
+    return rwItemDir(projectHandle, FLAT_DATA, keyOfFile(fileName), create, loc);
   }
   // The reworks of ONE joinery item (level/room/code), both locations.
   function listItemReworks(projectHandle, projectName, level, room, code){
     var flatName = flatBase(level, room, code, projectName) + ".json";
-    var legacyName = sanitizeFileBase(code) + ".json";
     var rows = [], unreadable = 0;
-    var flat = dataDirsExisting(projectHandle).then(function(dirs){
-      var q = Promise.resolve();
-      dirs.forEach(function(x){
-        q = q.then(function(){ return x.dir.getFileHandle(flatName, { create: false }); }).then(function(fh){
-          return readJsonSoft(fh).then(function(data){
-            if (!data){ unreadable++; return; }
-            var base = flatName.replace(/\.json$/i, "");
-            rows.push.apply(rows, rowsFromData(data, { project: projectName, fileBase: base, fileName: flatName, isFlat: true, flatOld: x.old, level: level, room: room, code: code }));
-          });
-        }, function(){});
-      });
-      return q;
-    });
-    var legacy = dirPath(projectHandle, [LEGACY_ROOT, level, room], false).then(function(d){ return d.getFileHandle(legacyName, { create: false }); }).then(function(fh){
+    var flat = itemDataDir(projectHandle, flatName, false, { level: level, room: room }).then(function(d){ return d.getFileHandle(flatName, { create: false }); }).then(function(fh){
       return readJsonSoft(fh).then(function(data){
         if (!data){ unreadable++; return; }
-        var base = legacyName.replace(/\.json$/i, "");
-        rows.push.apply(rows, rowsFromData(data, { project: projectName, fileBase: base, fileName: legacyName, isFlat: false, level: level, room: room, levelDir: level, roomDir: room, code: code }));
+        var base = flatName.replace(/\.json$/i, "");
+        rows.push.apply(rows, rowsFromData(data, { project: projectName, fileBase: base, fileName: flatName, isFlat: true, flatOld: false, level: level, room: room, code: code }));
       });
     }, function(){});
-    return Promise.all([flat, legacy]).then(function(){ return { rows: dedupeFlat(rows), unreadable: unreadable }; });
+    return flat.then(function(){ return { rows: dedupeFlat(rows), unreadable: unreadable }; });
   }
   // A row for the item an ITP app has open (it knows where it is already).
+  // (2026-10-04) every project is flat now -- the first argument is ignored (kept so the apps' calls stay as they are)
   function rowFor(isFlat, level, room, code, entry, projectName){
-    var fileBase = isFlat ? flatBase(level, room, code, projectName) : sanitizeFileBase(code);
-    return { project: projectName || "", level: level, room: room, code: code, fileBase: fileBase, fileName: fileBase + ".json", isFlat: !!isFlat,
-      levelDir: isFlat ? "" : level, roomDir: isFlat ? "" : room, entry: entry || {} };
+    var fileBase = flatBase(level, room, code, projectName);
+    return { project: projectName || "", level: level, room: room, code: code, fileBase: fileBase, fileName: fileBase + ".json", isFlat: true,
+      levelDir: "", roomDir: "", entry: entry || {} };
   }
   function dataDir(projectHandle, row){
-    if (!row.isFlat) return dirPath(projectHandle, [LEGACY_ROOT, row.levelDir || row.level, row.roomDir || row.room], false);
-    if (row.flatOld === true) return dirPath(projectHandle, FLAT_DATA_OLD, false);
-    if (row.flatOld === false) return dirPath(projectHandle, FLAT_DATA, false);
-    return itemDataDir(projectHandle, row.fileName, false); // not known which folder: wherever the file is
+    return itemDataDir(projectHandle, row.fileName, false, rowLoc(row)); // (2026-10-04) the item's own folder
   }
   // The full entry (photos included) for one row, read fresh. Rejects with
   // code "read_failed" if the file can't be read, "gone" if the entry was
@@ -7639,20 +8021,13 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
 
   /* ------------------------------ the log (event files) ------------------------------ */
   function logDir(projectHandle, row, create){
-    if (row.isFlat) return dirPath(projectHandle, FLAT_LOG.concat([row.fileBase]), create);
-    return dirPath(projectHandle, [LEGACY_ROOT, row.levelDir || row.level, row.roomDir || row.room], false).then(function(h){
-      return h.getDirectoryHandle(row.fileBase + " log", { create: !!create });
-    });
+    return itemDataDir(projectHandle, row.fileName || (row.fileBase + ".json"), create, rowLoc(row)).then(function(d){ return d.getDirectoryHandle(RW_LOG, { create: !!create }); });
   }
   // Every event for one item file (all its entries). Missing folder -> [].
   // A single file mid-sync is skipped (it shows up on the next read); the
   // count of skipped files comes back as .skipped.
-  // (2026-10-02) an item's events can sit in the new "RW Log" folder and the old "Install ITP Rework Log" folder: both are read and merged
   function logDirsFor(projectHandle, row){
-    if (!row.isFlat) return logDir(projectHandle, row, false).then(function(d){ return [d]; }, function(err){ if (isNotFound(err)) return []; throw err; });
-    return Promise.all((READ_OLD_FLAT ? [FLAT_LOG, FLAT_LOG_OLD] : [FLAT_LOG]).map(function(base){
-      return dirPath(projectHandle, base.concat([row.fileBase]), false).then(function(d){ return d; }, function(err){ if (isNotFound(err)) return null; throw err; });
-    })).then(function(r){ return r.filter(Boolean); });
+    return logDir(projectHandle, row, false).then(function(d){ return [d]; }, function(err){ if (isNotFound(err)) return []; throw err; });
   }
   function readLog(projectHandle, row){
     return logDirsFor(projectHandle, row).then(function(dirs){
@@ -7697,7 +8072,8 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
 
   /* ------------------------------ fold + log lines ------------------------------ */
   // (2026-10-02) Andrew: "when a rework is logged, we can chose who to flag it with (drafter, machine shop, factory managers)"
-  var FLAG_GROUPS = { machineShop: "Machine shop", factoryManagers: "Factory managers" };
+  // (2026-10-04) Andrew: "option to pass a rework onto another person / division" -- more divisions beside the Machine shop and Factory managers
+  var FLAG_GROUPS = { machineShop: "Machine shop", factoryManagers: "Factory managers", manufacture: "Manufacture", install: "Install", delivery: "Delivery", solidSurface: "Solid surface" };
   function flagLabel(g){ return g === "drafter" ? "Drafter" : (FLAG_GROUPS[g] || ""); }
   function fold(entry, events){
     entry = entry || {};
@@ -7828,8 +8204,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
 
   /* ------------------------------ PDFs ------------------------------ */
   function pdfDir(projectHandle, row, create){
-    if (row.isFlat) return dirPath(projectHandle, FLAT_PDF, create);
-    return dataDir(projectHandle, row);
+    return rwItemDir(projectHandle, FLAT_PDF, row.fileBase, create, rowLoc(row)); // (2026-10-04) PDFs\RW\<Level>\<Room>\<item>\
   }
   function pdfPartFor(entry){
     if (entry.cabinetNumber) return "Cab " + sanitizeFileBase(entry.cabinetNumber).slice(0, 20).replace(/[ .]+$/, "");
@@ -7841,7 +8216,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
   }
   // Rework PDFs for one item file, newest first: [{name, handle, perRework, when}]
   function listItemPdfs(projectHandle, row){
-    var oldPdf = (row.isFlat && READ_OLD_FLAT) ? dirPath(projectHandle, FLAT_PDF_OLD, false).then(function(d){ return listEntries(d); }, function(){ return []; }) : Promise.resolve([]);
+    var oldPdf = Promise.resolve([]);
     return Promise.all([pdfDir(projectHandle, row, false).then(function(d){ return listEntries(d); }, function(){ return []; }), oldPdf]).then(function(two){
       var es = two[0].concat(two[1]);
       var prefix = row.fileBase + " - ";
@@ -7858,7 +8233,16 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
         if (a.perRework !== b.perRework) return a.perRework ? -1 : 1;
         return String(b.when).localeCompare(String(a.when));
       });
-      return out;
+      // (2026-10-04) only the newest PDF of each rework is listed (older ones made before this change are still in the folder until
+      // that rework is printed again, which moves them into Older -- see supersedeOlderPdfs)
+      var seen = {};
+      return out.filter(function(o){
+        if (!o.perRework) return true;
+        var m = PDF_STAMP_RE.exec(o.name), k = m ? m[1] : o.name;
+        if (seen[k]) return false;
+        seen[k] = true;
+        return true;
+      });
     });
   }
   function imageFormat(dataUrl){ return /^data:image\/png/i.test(String(dataUrl || "")) ? "PNG" : "JPEG"; }
@@ -7960,7 +8344,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
     var fields = [
       ["Project No.", proj.no || "—"], ["Project", proj.name || row.project || "—"],
       ["Head Contractor / Builder", proj.contractor || "—"], ["Level", row.level || "—"],
-      ["Area / Room", row.room || "—"], ["Joinery No.", row.code || "—"],
+      ["Area / Room", row.room || "—"], ["Joinery No.", (row.code && window.UtzItemFiles ? UtzItemFiles.label(row.level, row.room, row.code, row.project) : row.code) || "—"], // (2026-10-04) "JG.33.1 - 001"
       ["Cabinet", entry.cabinetNumber || "—"], ["Logged", [fmtDate(entry.createdAt, true), entry.createdBy || "", entry.createdApp ? "in " + appLabel(entry.createdApp) : ""].filter(Boolean).join(" — ") || "—"],
       ["Current state", f.closed ? "Closed out" : stateLabel(f.status)], ["State set", [fmtDate(f.closed ? f.closed.at : f.statusAt, true), f.closed ? f.closed.by : f.statusBy].filter(Boolean).join(" — ") || "—"],
       ["Delivered to site", f.delivered ? [f.delivered.date || fmtDate(f.delivered.at), f.delivered.by || ""].filter(Boolean).join(" — ") : "Not yet"], ["Photos", String(photos.filter(function(p){ return !/^Delivery location/.test(p.caption); }).length)],
@@ -8097,7 +8481,45 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
     return doc.output("blob");
   }
   function savePdf(projectHandle, row, name, blob){
-    return pdfDir(projectHandle, row, true).then(function(d){ return writeVerified(d, name, blob); });
+    return pdfDir(projectHandle, row, true).then(function(d){
+      return writeVerified(d, name, blob).then(function(fh){
+        // best-effort: a failed tidy-up never fails the save
+        return supersedeOlderPdfs(d, row, name).then(function(){ return fh; }, function(err){ console.warn("Moving older rework PDFs aside failed:", err); return fh; });
+      });
+    });
+  }
+  /* (2026-10-04) Andrew: "Rework pdfs for a joinery item to not keep doubling up, just keep the latest version of that rework pdf."
+     After a rework's PDF is saved, the older PDFs of the SAME rework (same "<fileBase> - <Cab X | Rework yy-mm-dd> - " part,
+     whoever made them) are MOVED into PDFs/RW/Older/ -- never deleted; listItemPdfs only lists the RW folder itself, so the item
+     shows the latest one. Two reworks on the same item with the same cabinet number share that part, so a reprint of one also
+     moves the other's older PDF aside (still in Older). Flat layout only (a legacy item keeps its PDFs beside its data). */
+  var OLDER_PDF_DIR = "Older";
+  var PDF_STAMP_RE = /^(.*) - [^-]+ - (\d{2}(?:\d\d)?-\d\d-\d\d \d\d-\d\d-\d\d)\.pdf$/i;
+  function supersedeOlderPdfs(dirH, row, keepName){
+    var keep = PDF_STAMP_RE.exec(keepName);
+    if (!keep || keep[1].indexOf(row.fileBase + " - ") !== 0) return Promise.resolve();
+    var keepStamp = keep[2].length === 17 ? "20" + keep[2] : keep[2];
+    return listEntries(dirH).then(function(es){
+      var old = es.filter(function(e){
+        if (e.kind !== "file" || e.name === keepName) return false;
+        var m = PDF_STAMP_RE.exec(e.name);
+        if (!m || m[1] !== keep[1]) return false;
+        var st = m[2].length === 17 ? "20" + m[2] : m[2];
+        return st <= keepStamp;
+      });
+      if (!old.length) return;
+      return dirH.getDirectoryHandle(OLDER_PDF_DIR, { create: true }).then(function(olderH){
+        var p = Promise.resolve();
+        old.forEach(function(fh){ p = p.then(function(){ return movePdfInto(dirH, fh, olderH); }); });
+        return p;
+      });
+    });
+  }
+  // copy, read the size back, then remove the original -- a move, so nothing is lost if any step fails
+  function movePdfInto(fromDir, fh, toDir){
+    return fh.getFile().then(function(f){
+      return writeVerified(toDir, fh.name, f).then(function(){ return fromDir.removeEntry(fh.name); });
+    });
   }
 
   /* ------------------------------ UI: register + detail + item card ------------------------------ */
@@ -8343,7 +8765,8 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
     // Outstanding (not delivered / closed) reworks per drafter, for the Viewer's Reworks panel:
     //   { by: { "<name>": { waiting, open } }, none, open, loading }   waiting = flagged, no answer yet; open = flagged, not delivered
     function drafterSummary(){
-      var by = {}, none = 0, open = 0, unread = 0, groups = { machineShop: 0, factoryManagers: 0 };
+      var by = {}, none = 0, open = 0, unread = 0, groups = {};
+      Object.keys(FLAG_GROUPS).forEach(function(g){ groups[g] = 0; });
       st.rows.forEach(function(r){
         var evs = eventsOf(r);
         if (!evs){ unread++; return; }
@@ -8570,6 +8993,14 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
       renderRegister(); notify();
       if (st.detail && entryKey(st.detail.row) === entryKey(row)) renderDetail();
     }
+    // (2026-10-04) Andrew: "when sent to cnc is pressed, change the flag to machine shop, once a rework is cut (if flagged to machine
+    // shop) flag it to the factory managers" -- the automatic hand-overs write the same flaggedTo event a person would
+    function autoFlag(row, group, user){
+      return writeEv(row, "flaggedTo", { group: group }, user, cfg.appName).then(function(ev){
+        (st.logs[rowKey(row)] = st.logs[rowKey(row)] || []).push(ev);
+        return true;
+      }, function(err){ console.error("Automatic flag to " + group + " failed:", err); return false; });
+    }
     function applyAction(row){
       if (!row || !cfg.action) return Promise.resolve(false);
       var user = cfg.getUser();
@@ -8583,9 +9014,14 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
         }
         return writeEv(row, "state", { status: cfg.action.status }, user, cfg.appName).then(function(ev){
           (st.logs[rowKey(row)] = st.logs[rowKey(row)] || []).push(ev);
-          toast(cfg.action.doneToast || "Saved.");
-          afterChange(row);
-          return true;
+          var cur = foldRow(row);
+          // cut while flagged to the Machine shop -> over to the Factory managers
+          var handOver = cfg.action.status === "machined" && !cur.drafter && cur.flagGroup === "machineShop";
+          return (handOver ? autoFlag(row, "factoryManagers", user) : Promise.resolve(false)).then(function(moved){
+            toast((cfg.action.doneToast || "Saved.") + (moved ? " Flagged to Factory managers." : ""));
+            afterChange(row);
+            return true;
+          });
         });
       }, function(err){ toast(readErrMsg(err), 4200); return false; }).catch(function(err){
         console.error("Rework state change failed:", err);
@@ -8652,9 +9088,13 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
       if (!user){ toast("Choose your name (and PIN) on the Home screen first — every rework change is logged against a name.", 4200); return Promise.resolve(false); }
       return writeEv(row, "drafterAction", payload, user, cfg.appName).then(function(ev){
         (st.logs[rowKey(row)] = st.logs[rowKey(row)] || []).push(ev);
-        toast(doneMsg || "Saved.");
-        afterChange(row);
-        return true;
+        // Sent to CNC -> the rework is now with the Machine shop
+        var toShop = payload && payload.action === "resentToCnc" && foldRow(row).drafter;
+        return (toShop ? autoFlag(row, "machineShop", user) : Promise.resolve(false)).then(function(moved){
+          toast((doneMsg || "Saved.") + (moved ? " Flagged to Machine shop." : ""));
+          afterChange(row);
+          return true;
+        });
       }).catch(function(err){
         console.error("Saving the drafter's answer failed:", err);
         toast("Couldn't save that — try again.");
@@ -8831,20 +9271,10 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
       toast("Making the PDF…", 8000);
       return makePdf(row).then(function(res){
         var savedNote = res.saved ? " A copy is saved in the project's rework PDFs." : " (Couldn't save a copy in the project folder.)";
-        if (cfg.isDesktop && cfg.isDesktop()){
-          var url = URL.createObjectURL(res.blob);
-          var fr = document.createElement("iframe");
-          fr.style.cssText = "position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;";
-          fr.src = url;
-          fr.onload = function(){
-            try{ fr.contentWindow.focus(); fr.contentWindow.print(); }
-            catch(e){ if (!openBlob(res.blob, res.name)) setReady(row, res); }
-            setTimeout(function(){ fr.remove(); URL.revokeObjectURL(url); }, 120000);
-          };
-          document.body.appendChild(fr);
-          toast("Printing “" + res.name + "”." + savedNote, 5000);
-        } else if (openBlob(res.blob, res.name)){
-          toast("Opened “" + res.name + "” — print it from there." + savedNote, 5000);
+        // (2026-10-04) Andrew: "print button to open the pdf viewer" -- Print opens the PDF in the viewer (the in-app one on a tablet /
+        // phone, the browser's own on a computer); printing is done from there
+        if (openBlob(res.blob, res.name)){
+          toast("Opened “" + res.name + "” — print it from the viewer." + savedNote, 5000);
         } else {
           setReady(row, res);
           toast("The PDF is ready — tap Open to print it." + savedNote, 5000);
@@ -8922,7 +9352,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
       var ansMode = !!(cfg.drafterPicker && cfg.drafterPicker.answers);
       if (cfg.drafterPicker && !f.isDone){
         var dn = (d.drafters || []).slice();
-        drafterCard = "<div class=\"card\"><h2 class=\"section-title\">Flagged to</h2>" +
+        drafterCard = "<div class=\"card\"><h2 class=\"section-title\">Pass on to</h2>" +
           "<p class=\"sub\" style=\"margin:0 0 8px;\">" + (f.drafter
             ? "Flagged to <b>" + escapeHtml(f.drafter) + "</b>" + (f.drafterBy ? " by " + escapeHtml(f.drafterBy) : "") + (f.drafterAt ? ", " + escapeHtml(fmtDate(f.drafterAt, true)) : "") + (f.drafterAction ? " — <b>" + escapeHtml(drafterActionLabel(f.drafterAction.action)) + "</b> (" + escapeHtml([f.drafterAction.by, fmtDate(f.drafterAction.at, true)].filter(Boolean).join(", ")) + ")" : " — waiting on the drafter")
             : (f.flagGroup && FLAG_GROUPS[f.flagGroup] ? "Flagged to <b>" + escapeHtml(FLAG_GROUPS[f.flagGroup]) + "</b>" + (f.flagGroupBy ? " by " + escapeHtml(f.flagGroupBy) : "") + (f.flagGroupAt ? ", " + escapeHtml(fmtDate(f.flagGroupAt, true)) : "") + "." : "Not flagged to anyone yet.")) + "</p>" +
@@ -8931,11 +9361,11 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
               "<button type=\"button\" class=\"btn\" data-urw-d=\"cncSent\">" + (f.drafterAction && f.drafterAction.action === "resentToCnc" ? "Update file name" : "Sent to CNC") + "</button>" +
               (f.drafterAction && f.drafterAction.action === "notRequired" ? "" : "<button type=\"button\" class=\"btn secondary\" data-urw-d=\"drafterNotReq\">Not required</button>") + "</div>" : "") +
           (d.draftersLoading ? "<p class=\"sub urw-small\" style=\"margin:0;\">Loading drafters…</p>" :
-            (dn.length ? "<div class=\"urw-actions\"><select data-urw-d=\"drafterSel\"><option value=\"\">— pick a drafter —</option>" + dn.map(function(n){ return "<option value=\"" + escapeHtml(n) + "\">" + escapeHtml(n) + "</option>"; }).join("") + "</select>" +
-              "<button type=\"button\" class=\"btn\" data-urw-d=\"drafterGo\">" + (f.drafter ? (ansMode ? "Pass on to this drafter" : "Flag to another drafter") : "Flag to drafter") + "</button></div>" +
+            (dn.length ? "<div class=\"urw-actions\"><select data-urw-d=\"drafterSel\"><option value=\"\">— pick a person —</option>" + dn.map(function(n){ return "<option value=\"" + escapeHtml(n) + "\">" + escapeHtml(n) + "</option>"; }).join("") + "</select>" +
+              "<button type=\"button\" class=\"btn\" data-urw-d=\"drafterGo\">" + (f.drafter ? (ansMode ? "Pass on to this person" : "Pass on to this person") : "Pass on to person") + "</button></div>" +
               (ansMode ? "" : "<p class=\"sub urw-small\" style=\"margin:8px 0 0;\">The drafter answers in the Viewer: Sent to CNC, Not required, or pass it on.</p>")
               : "<p class=\"sub urw-small\" style=\"margin:0;\">No drafters found for this project yet.</p>")) +
-          "<div class=\"urw-actions\" style=\"margin-top:10px;\"><span class=\"urw-small urw-muted\">Or flag to:</span>" +
+          "<div class=\"urw-actions\" style=\"margin-top:10px;\"><span class=\"urw-small urw-muted\">Or pass to a division:</span>" +
             Object.keys(FLAG_GROUPS).map(function(g){ return "<button type=\"button\" class=\"btn secondary\" data-urw-d=\"flagGrp\" data-grp=\"" + g + "\"" + (!f.drafter && f.flagGroup === g ? " disabled" : "") + ">" + escapeHtml(FLAG_GROUPS[g]) + "</button>"; }).join("") + "</div>" +
           "</div>";
       }
@@ -9239,8 +9669,8 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
     box.className = "urw-flagpick";
     var lab = function(v, t, on){ return "<label style=\"display:inline-flex;align-items:center;gap:5px;margin:0 14px 6px 0;font-size:13px;color:inherit;cursor:pointer;\"><input type=\"radio\" name=\"" + uid + "\" value=\"" + v + "\"" + (on ? " checked" : "") + "> " + t + "</label>"; };
     box.innerHTML = "<div style=\"font-size:11px;text-transform:uppercase;letter-spacing:.04em;opacity:.75;margin:12px 0 6px;\">Flag this rework to</div>" +
-      "<div>" + lab("", "Nobody yet", true) + lab("drafter", "A drafter", false) + lab("machineShop", "Machine shop", false) + lab("factoryManagers", "Factory managers", false) + "</div>" +
-      "<select data-fp=\"sel\" hidden style=\"font:inherit;font-size:13px;padding:7px 9px;max-width:100%;margin:2px 0 6px;\"><option value=\"\">— pick a drafter —</option></select>" +
+      "<div>" + lab("", "Nobody yet", true) + lab("drafter", "A drafter", false) + Object.keys(FLAG_GROUPS).map(function(g){ return lab(g, FLAG_GROUPS[g], false); }).join("") + "</div>" +
+      "<select data-fp=\"sel\" hidden style=\"font:inherit;font-size:13px;padding:7px 9px;max-width:100%;margin:2px 0 6px;\"><option value=\"\">— pick a person —</option></select>" +
       "<div data-fp=\"hint\" style=\"font-size:12px;opacity:.75;\"></div>";
     host.innerHTML = ""; host.appendChild(box);
     var sel = box.querySelector("[data-fp=sel]"), hint = box.querySelector("[data-fp=hint]");
@@ -9253,9 +9683,9 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
       listDrafters(h, opts.fallbackNames).then(function(names){
         if (loadedFor !== h) return;
         var keep = sel.value;
-        sel.innerHTML = "<option value=\"\">— pick a drafter —</option>" + names.map(function(n){ return "<option value=\"" + escapeHtml(n) + "\">" + escapeHtml(n) + "</option>"; }).join("");
+        sel.innerHTML = "<option value=\"\">— pick a person —</option>" + names.map(function(n){ return "<option value=\"" + escapeHtml(n) + "\">" + escapeHtml(n) + "</option>"; }).join("");
         sel.value = keep;
-        hint.textContent = names.length ? "" : "No drafters found for this project yet.";
+        hint.textContent = names.length ? "" : "No names found yet.";
       });
     }
     box.addEventListener("change", function(){
@@ -9365,13 +9795,13 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
 
   global.UtzRework = {
     askOnSignoff: askOnSignoff,
-    itemDataDir: itemDataDir, dataDirsExisting: dataDirsExisting, FLAT_DATA: FLAT_DATA, FLAT_DATA_OLD: FLAT_DATA_OLD,
+    itemDataDir: itemDataDir, dataDirsExisting: dataDirsExisting, FLAT_DATA: FLAT_DATA,
     FLAG_GROUPS: FLAG_GROUPS, flagLabel: flagLabel, flagPicker: flagPicker, flagEvent: flagEvent, listDrafters: listDrafters,
     VERSION: 1, STATES: STATES, STATE_ORDER: STATE_ORDER, QUICK_COMMENTS: QUICK_COMMENTS,
     stamp: stamp, userSlug: userSlug, sanitizeFileBase: sanitizeFileBase, fmtDate: fmtDate,
     listProjectReworks: listProjectReworks, listItemReworks: listItemReworks, readFullEntry: readFullEntry, rowFor: rowFor, slimEntry: slimEntry,
     readLog: readLog, writeEvent: writeEvent, logDir: logDir, fold: fold, logLines: logLines, stateLabel: stateLabel, drafterActionLabel: drafterActionLabel,
-    pdfFileName: pdfFileName, buildPdf: buildPdf, savePdf: savePdf, listItemPdfs: listItemPdfs, pdfDir: pdfDir,
+    pdfFileName: pdfFileName, buildPdf: buildPdf, savePdf: savePdf, supersedeOlderPdfs: supersedeOlderPdfs, listItemPdfs: listItemPdfs, pdfDir: pdfDir,
     create: create
   };
 })(window);
@@ -9418,21 +9848,11 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
      see above) with its own per-device identity doing the writes, Andrew
      asked for this app to have its own database too, matching every other
      app in the family. DB_NAME is now "utzline-solid-surface-schedule-db".
-     Because the persisted Projects-root folder handle used to live in the
-     SHARED database, a straight rename would make every already-installed
-     copy of this app forget its chosen folder and ask to reconnect once --
-     see readLegacyRootHandleForCarryOver below for the one-time,
-     best-effort carry-over that avoids that where it can (never touching
-     the old database, which the main Scheduler still uses). The "sss-"
+     The "sss-"
      prefix on this app's own keys is no longer load-bearing now that
      nothing else uses this database -- left in place anyway (harmless,
      less churn than renaming every key). */
   var DB_NAME = "utzline-solid-surface-schedule-db", STORE = "session";
-  // The old SHARED database this app used through v6 -- see the carry-over
-  // comment above and readLegacyRootHandleForCarryOver below. NEVER opened
-  // for write, and never deleted or modified: the main Scheduler still
-  // uses it as its own DB_NAME.
-  var OLD_SHARED_DB_NAME = "utzline-scheduler-db";
   /* One connection, opened once and reused (2026-09-25, family-wide sweep --
      v6; the same fix Install ITP v35 shipped after Andrew's "still having
      slow down after a little use, (possibly caching issues)"). This used to
@@ -9482,62 +9902,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
     });
   }
 
-  /* ---- One-time Projects-root handle carry-over from the old shared
-     database (v7, 2026-09-26) ----
-     Splitting DB_NAME onto its own database (see the comment above it)
-     means this app's persisted Projects-root folder handle -- previously
-     stored under OLD_SHARED_DB_NAME's own "session" store, the same key
-     ("projectsRootHandle") -- is no longer where boot() looks for it. Left
-     alone, every already-installed copy of this app would boot to "choose
-     your Projects folder" once, purely because of this internal rename --
-     a real inconvenience for no benefit, since the folder itself hasn't
-     moved. So: a short-lived, read-only, best-effort connection to the OLD
-     database, ONLY to fetch that one key -- never a write, never a delete,
-     and the old database is left exactly as the main Scheduler (which
-     still uses it as its own DB_NAME) expects it. indexedDB.databases()
-     (supported in every browser this app already requires, since it also
-     requires window.showDirectoryPicker) is checked FIRST specifically so
-     opening this function never brings the old database into existence on
-     a device that genuinely never had it -- indexedDB.open() on a name
-     that doesn't exist yet would otherwise create it. Any failure at any
-     step (no support, the database genuinely absent, a blocked/blocked-by
-     connection, a missing key) just resolves null, and boot() falls back
-     to its normal "pick your Projects root" flow -- this is a convenience,
-     never a data-safety requirement. */
-  function readLegacyRootHandleForCarryOver(){
-    function openAndReadOldDb(){
-      return new Promise(function(resolve){
-        var req;
-        try{ req = indexedDB.open(OLD_SHARED_DB_NAME); }catch(e){ resolve(null); return; }
-        req.onupgradeneeded = function(){
-          // The existence check below should have prevented this -- but if
-          // it couldn't run (no indexedDB.databases() support) and the old
-          // database genuinely isn't there, this open just created it.
-          // Give it its expected shape so nothing downstream breaks, then
-          // resolve null: there is nothing to carry over.
-          try{ req.result.createObjectStore(STORE); }catch(e){}
-        };
-        req.onsuccess = function(){
-          var db = req.result;
-          try{
-            var tx = db.transaction(STORE, "readonly");
-            var rq = tx.objectStore(STORE).get("projectsRootHandle");
-            rq.onsuccess = function(){ db.close(); resolve(rq.result || null); };
-            rq.onerror = function(){ db.close(); resolve(null); };
-          }catch(e){ try{ db.close(); }catch(e2){} resolve(null); }
-        };
-        req.onerror = function(){ resolve(null); };
-      });
-    }
-    if (typeof indexedDB.databases === "function"){
-      return indexedDB.databases().then(function(list){
-        var exists = (list || []).some(function(d){ return d && d.name === OLD_SHARED_DB_NAME; });
-        return exists ? openAndReadOldDb() : null;
-      }).catch(function(){ return openAndReadOldDb(); });
-    }
-    return openAndReadOldDb();
-  }
-
+  
   /* ---- Last-known snapshots (2026-09-25, sweep -- v6; "icon caching like we
      just did"). The design rule proven on Andrew's tablet during the ITP
      rounds: on Android + Dropbox every File System Access call costs
@@ -9906,16 +10271,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
   // gated on by any other app's own copy of utzline-users.csv), so this
   // addition is scoped to THIS app's own copy of APP_CODES only -- no
   // other sibling app's source needed to change for it.
-  var APP_CODES = [
-    ["SiteMeasure", "Site Measure"],
-    ["Viewer", "Viewer"],
-    ["InstallITP", "Install ITP"],
-    ["ManufactureITP", "Manufacture ITP"],
-    ["DeliveryITP", "Delivery ITP"],
-    ["Projects", "Projects"],
-    ["Scheduler", "Scheduler"],
-    ["SolidSurfaceSchedule", "Solid Surface Schedule"]
-  ];
+  var APP_CODES = UtzUsers.APP_CODES.slice(); // (2026-10-04) every app, the same list (shared/users)
   // Small, defensive CSV parse/stringify pair (RFC 4180 minimal subset) --
   // values here are short and simple (a name, a few digits, a short code
   // list) but this still handles a quote/comma/newline inside a field
@@ -10061,32 +10417,9 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
   // shared module -- this app has no way to import one -- but deliberately
   // kept in sync with that file's naming/schema so a file either app reads
   // is read back identically).
-  function legacyLevelSaveFilename(levelName){ return sanitizeFileBase(levelName) + ".utzline.json"; }
-  // Same strict rule as readLevelFileByName: null only for a genuinely
+    // Same strict rule as readLevelFileByName: null only for a genuinely
   // absent legacy file, read_failed for one that exists but won't read.
-  function readLegacyLevelFile(projectHandle, levelName){
-    if (!projectHandle) return Promise.resolve(null);
-    return projectHandle.getDirectoryHandle(levelName, { create: false }).then(function(levelH){
-      return levelH.getDirectoryHandle("saves", { create: false });
-    }).then(function(savesH){
-      return readTextFileStrict(savesH, legacyLevelSaveFilename(levelName), "legacy level file for " + levelName, function(text){
-        var parsed = JSON.parse(text);
-        if (!parsed || typeof parsed !== "object") throw new Error("not a level object");
-        return {
-          name: levelName,
-          imageDataURL: parsed.imageDataURL || null,
-          imageTiles: parsed.imageTiles || null,
-          imageW: parsed.imageW || 0,
-          imageH: parsed.imageH || 0,
-          markers: Array.isArray(parsed.objects) ? parsed.objects : []
-        };
-      }).then(function(res){ return res.found ? res.value : null; });
-    }, function(err){
-      if (isNotFoundErr(err)) return null;
-      return Promise.reject(readFailedErr("legacy level folder for " + levelName, err));
-    });
-  }
-  // Tries the flat shape first (the common case for anything touched by
+    // Tries the flat shape first (the common case for anything touched by
   // Site Measure/Projects since the cutover), then falls back to the
   // legacy per-Level-folder shape -- exactly the dual-path approach every
   // ITP app already uses. Whichever shape actually has a real image wins;
@@ -10098,12 +10431,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
   function readLevelFile(projectHandle, projectName, levelName){
     if (!projectHandle) return Promise.resolve(null);
     return readLevelFileByName(projectHandle, levelFileName(projectName, levelName)).then(function(flatLevel){
-      if (flatLevel && flatLevel.imageW > 0 && flatLevel.imageH > 0 && (flatLevel.imageDataURL || (flatLevel.imageTiles && flatLevel.imageTiles.length))){
-        return flatLevel;
-      }
-      return readLegacyLevelFile(projectHandle, levelName).then(function(legacyLevel){
-        return legacyLevel || flatLevel; // prefer a real legacy plan; otherwise keep whatever the flat read gave (even if plan-less), same as before
-      });
+      return flatLevel;
     });
   }
   // (2026-09-25, sweep -- v6, Site Measure v46's own listFlatLevelNames) Used
@@ -10282,12 +10610,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
   function getJoineryStatusEventsRootDir(projectHandle, create){
     return eventsRootDir(projectHandle, joineryStatusEventsBranchName(), create);
   }
-  function getJoineryStatusItemDir(projectHandle, key, create){
-    return getJoineryStatusEventsRootDir(projectHandle, create).then(function(rootH){
-      return rootH.getDirectoryHandle(key, { create: !!create });
-    });
-  }
-  // Every per-item event folder directly under an events root, as the
+    // Every per-item event folder directly under an events root, as the
   // HANDLES the listing already hands back -- not names to look up again
   // one by one (2026-09-25, sweep -- v6: that was one named folder scan per
   // item per read, on top of the two-level walk above, for every item in
@@ -10444,10 +10767,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
   }
   // [] only when the legacy file genuinely isn't there; read_failed for one
   // that exists but won't read -- see migrateLegacyJoineryStatusIfNeeded.
-  function readLegacyJoineryStatusFile(projectHandle){
-    return readJsonArrayFileStrict(projectHandle, "joinery-status.json", "joinery-status.json");
-  }
-  /* (2026-09-25, sweep -- v6, "unreadable is not empty".) The original order
+    /* (2026-09-25, sweep -- v6, "unreadable is not empty".) The original order
      was: create the events folder, THEN read the legacy file, THEN write
      one event per history entry -- with the legacy read collapsing every
      failure to []. On a Dropbox-synced Android folder that meant: legacy
@@ -10464,66 +10784,21 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
      folder on every read. The same reordering is applied to this app's
      other two migrations (the main Scheduler's joinery-schedule.json and
      Machine Schedule's machining-flags.json) below. */
-  function migrateLegacyJoineryStatusIfNeeded(projectHandle){
-    var memoKey = (projectHandle && projectHandle.name || "") + "\u0000status";
-    if (migratedThisSession[memoKey]) return Promise.resolve(false);
-    return getJoineryStatusEventsRootDir(projectHandle, false).then(function(){
-      migratedThisSession[memoKey] = true;
-      return false;
-    }, function(err){
-      if (!isNotFoundErr(err)) return Promise.reject(readFailedErr("Joinery Status folder", err)); // can't tell -> don't migrate
-      return readLegacyJoineryStatusFile(projectHandle).then(function(list){
-        return getJoineryStatusEventsRootDir(projectHandle, true).then(function(){ return list; });
-      }).then(function(list){
-        var writes = [];
-        list.forEach(function(rec){
-          if (!rec) return;
-          var key = joineryItemPageKey(rec.level, rec.room, rec.joineryId);
-          var history = Array.isArray(rec.history) ? rec.history :
-            (rec.status && rec.updatedAt) ? [{ status: rec.status, at: rec.updatedAt, by: rec.updatedBy || "" }] : [];
-          history.forEach(function(h){
-            if (!h || !h.status || !h.at) return;
-            var payload = { kind: "status", level: rec.level || "", room: rec.room || "", joineryId: rec.joineryId || "", status: h.status, by: h.by || "", at: h.at };
-            var stamp = statusEventStampFromIso(h.at);
-            writes.push(getJoineryStatusItemDir(projectHandle, key, true).then(function(dirH){
-              return writeFileText(dirH, statusEventFileName(h.by, stamp, "status"), JSON.stringify(payload)); // (v17) retried + checked
-            }).catch(function(){}));
-          });
-          if (rec.jobNote){
-            var jnAt = rec.jobNoteAt || rec.updatedAt || new Date(0).toISOString();
-            var jnBy = rec.jobNoteBy || rec.updatedBy || "";
-            var jnPayload = { kind: "jobNote", level: rec.level || "", room: rec.room || "", joineryId: rec.joineryId || "", by: jnBy, at: jnAt };
-            var jnStamp = statusEventStampFromIso(jnAt);
-            writes.push(getJoineryStatusItemDir(projectHandle, key, true).then(function(dirH){
-              return writeFileText(dirH, statusEventFileName(jnBy, jnStamp, "jobnote"), JSON.stringify(jnPayload)); // (v17) retried + checked
-            }).catch(function(){}));
-          }
-        });
-        return Promise.all(writes);
-      }).then(function(){ migratedThisSession[memoKey] = true; return true; }).catch(function(err){
-        // A legacy file that exists but couldn't be read is the one failure
-        // that must NOT be swallowed -- nothing was created, the caller
-        // surfaces it, and the next open tries again.
-        if (isReadFailed(err)) return Promise.reject(err);
-        return false;
-      });
-    });
-  }
-  // Rejects read_failed only when the legacy file (or the events folder's
+    // Rejects read_failed only when the legacy file (or the events folder's
   // own existence check) can't be read -- the loaders then say so rather
   // than showing every item as "Created". Per-item event folders are read
   // straight from the handles the listing returns (listEventItemDirs), in
   // parallel, through the folded-event cache, with no named lookup per item.
   function readJoineryStatuses(projectHandle){
     if (!projectHandle) return Promise.resolve([]);
-    return migrateLegacyJoineryStatusIfNeeded(projectHandle).then(function(){
+    return Promise.resolve(false).then(function(){
       return getJoineryStatusEventsRootDir(projectHandle, false).then(null, function(err){
         if (isNotFoundErr(err)) return null;
         forgetProjectDir(projectHandle, [projectSavesDirName()]);
         return Promise.reject(readFailedErr("Joinery Status folder", err));
       });
     }).then(function(rootH){
-      if (rootH === null) return readLegacyJoineryStatusFile(projectHandle);
+      if (rootH === null) return [];
       return readFoldedEventBranch(projectHandle, rootH, joineryStatusEventsBranchName(), foldJoineryStatusEvents);
     });
   }
@@ -10671,8 +10946,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
      statusEventFileName/readFoldedEventBranch/readJsonArrayFileStrict,
      already defined above/below for the main Scheduler's own read-only
      port. */
-  function joineryScheduleFilename(){ return "solid-surface-schedule.json"; }
-  function joineryScheduleEventsBranchName(){ return "Solid Surface Schedule"; }
+    function joineryScheduleEventsBranchName(){ return "Solid Surface Schedule"; }
   function getJoineryScheduleEventsRootDir(projectHandle, create){
     return eventsRootDir(projectHandle, joineryScheduleEventsBranchName(), create);
   }
@@ -10697,10 +10971,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
   }
   // [] only when the legacy file genuinely isn't there; read_failed for one
   // that exists but won't read -- see migrateLegacyJoineryScheduleIfNeeded.
-  function readLegacyJoinerySchedule(projectHandle){
-    return readJsonArrayFileStrict(projectHandle, joineryScheduleFilename(), joineryScheduleFilename());
-  }
-  // Same reordering as every other legacy migration in this app (the v6
+    // Same reordering as every other legacy migration in this app (the v6
   // "unreadable is not empty" rule): read the legacy file FIRST, strictly;
   // only then create the events folder and write the events -- a legacy
   // solid-surface-schedule.json that's mid-sync no longer becomes an empty
@@ -10708,42 +10979,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
   // per session (its own key suffix, alongside the main-schedule/status/
   // machining-flags migrations' own keys in this same migratedThisSession
   // map).
-  function migrateLegacyJoineryScheduleIfNeeded(projectHandle){
-    var memoKey = (projectHandle && projectHandle.name || "") + "\u0000ownSchedule";
-    if (migratedThisSession[memoKey]) return Promise.resolve(false);
-    return getJoineryScheduleEventsRootDir(projectHandle, false).then(function(){
-      migratedThisSession[memoKey] = true;
-      return false;
-    }, function(err){
-      if (!isNotFoundErr(err)) return Promise.reject(readFailedErr("Solid Surface Schedule folder", err)); // can't tell -> don't migrate
-      return readLegacyJoinerySchedule(projectHandle).then(function(list){
-        return getJoineryScheduleEventsRootDir(projectHandle, true).then(function(){ return list; });
-      }).then(function(list){
-        var writes = [];
-        list.forEach(function(rec){
-          if (!rec) return;
-          var key = joineryItemPageKey(rec.level, rec.room, rec.joineryId);
-          var at = rec.updatedAt || new Date(0).toISOString();
-          var payload = {
-            kind: "set", level: rec.level || "", room: rec.room || "", joineryId: rec.joineryId || "",
-            requiredDeliveryDate: rec.requiredDeliveryDate || "",
-            manufactureLeadTimeDays: rec.manufactureLeadTimeDays,
-            manufactureStartDate: rec.manufactureStartDate || "",
-            by: rec.setBy || "", at: at
-          };
-          var stamp = statusEventStampFromIso(at);
-          writes.push(getJoineryScheduleItemDir(projectHandle, key, true).then(function(dirH){
-            return writeFileText(dirH, statusEventFileName(payload.by, stamp, "set"), JSON.stringify(payload)); // (v17) retried + checked
-          }).catch(function(){}));
-        });
-        return Promise.all(writes);
-      }).then(function(){ migratedThisSession[memoKey] = true; return true; }).catch(function(err){
-        if (isReadFailed(err)) return Promise.reject(err); // legacy file exists but couldn't be read: nothing created, surface it
-        return false;
-      });
-    });
-  }
-  // Whole-project fold of this app's own schedule -- feeds the Overall/
+    // Whole-project fold of this app's own schedule -- feeds the Overall/
   // per-project table reads AND the Set Schedule dialog's own-record check
   // (findScheduleRecord against the array this returns), so this keeps
   // returning a plain array and neither of those call sites needed a
@@ -10761,14 +10997,14 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
   // Scheduler's own joinery-schedule.json read-only port below).
   function readJoinerySchedule(projectHandle){
     if (!projectHandle) return Promise.resolve([]);
-    return migrateLegacyJoineryScheduleIfNeeded(projectHandle).then(function(){
+    return Promise.resolve(false).then(function(){
       return getJoineryScheduleEventsRootDir(projectHandle, false).then(null, function(err){
         if (isNotFoundErr(err)) return null;
         forgetProjectDir(projectHandle, [projectSavesDirName()]);
         return Promise.reject(readFailedErr("Solid Surface Schedule folder", err));
       });
     }).then(function(rootH){
-      if (rootH === null) return readLegacyJoinerySchedule(projectHandle);
+      if (rootH === null) return [];
       return readFoldedEventBranch(projectHandle, rootH, joineryScheduleEventsBranchName(), foldJoinerySchedule);
     });
   }
@@ -10794,7 +11030,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
     var at = new Date().toISOString();
     var payload = Object.assign({ kind: kind, level: level, room: room || "", joineryId: joineryId || "", by: updatedBy || "", at: at }, fields || {});
     var stamp = statusEventStampFromIso(at);
-    return migrateLegacyJoineryScheduleIfNeeded(projectHandle).then(function(){
+    return Promise.resolve(false).then(function(){
       return getJoineryScheduleItemDir(projectHandle, key, true);
     }).then(function(dirH){
       return writeFileText(dirH, statusEventFileName(updatedBy, stamp, kind), JSON.stringify(payload)); // (v17) retried + checked
@@ -10829,18 +11065,12 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
      each their own atomic whole, so an item's current schedule is just its
      single LATEST event by timestamp -- a "clear" event means no schedule,
      otherwise that event's own fields ARE the record. */
-  function mainJoineryScheduleFilename(){ return "joinery-schedule.json"; }
-  function mainJoineryScheduleEventsBranchName(){ return "Joinery Schedule"; }
+    function mainJoineryScheduleEventsBranchName(){ return "Joinery Schedule"; }
   // Memoised per project (getCachedDir) -- see getJoineryStatusEventsRootDir.
   function getMainJoineryScheduleEventsRootDir(projectHandle, create){
     return eventsRootDir(projectHandle, mainJoineryScheduleEventsBranchName(), create);
   }
-  function getMainJoineryScheduleItemDir(projectHandle, key, create){
-    return getMainJoineryScheduleEventsRootDir(projectHandle, create).then(function(rootH){
-      return rootH.getDirectoryHandle(key, { create: !!create });
-    });
-  }
-  function foldMainJoinerySchedule(events){
+    function foldMainJoinerySchedule(events){
     if (!events || !events.length) return null;
     var latest = null;
     events.forEach(function(e){ if (!latest || (e.at || "") > (latest.at || "")) latest = e; });
@@ -10856,10 +11086,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
   }
   // [] only when the legacy file genuinely isn't there; read_failed for one
   // that exists but won't read -- see migrateLegacyMainJoineryScheduleIfNeeded.
-  function readLegacyMainJoinerySchedule(projectHandle){
-    return readJsonArrayFileStrict(projectHandle, mainJoineryScheduleFilename(), mainJoineryScheduleFilename());
-  }
-  // Same reordering as migrateLegacyJoineryStatusIfNeeded (2026-09-25,
+    // Same reordering as migrateLegacyJoineryStatusIfNeeded (2026-09-25,
   // sweep -- v6): read the legacy file FIRST, strictly; only then create the
   // events folder and write the events. The MAIN Scheduler's legacy
   // joinery-schedule.json that's mid-sync no longer becomes an empty events
@@ -10867,55 +11094,20 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
   // forever -- this app performing that migration for a file it only ever
   // READS is exactly why getting the order right matters here. Memoised per
   // project per session.
-  function migrateLegacyMainJoineryScheduleIfNeeded(projectHandle){
-    var memoKey = (projectHandle && projectHandle.name || "") + "\u0000mainSchedule";
-    if (migratedThisSession[memoKey]) return Promise.resolve(false);
-    return getMainJoineryScheduleEventsRootDir(projectHandle, false).then(function(){
-      migratedThisSession[memoKey] = true;
-      return false;
-    }, function(err){
-      if (!isNotFoundErr(err)) return Promise.reject(readFailedErr("Joinery Schedule folder", err)); // can't tell -> don't migrate
-      return readLegacyMainJoinerySchedule(projectHandle).then(function(list){
-        return getMainJoineryScheduleEventsRootDir(projectHandle, true).then(function(){ return list; });
-      }).then(function(list){
-        var writes = [];
-        list.forEach(function(rec){
-          if (!rec) return;
-          var key = joineryItemPageKey(rec.level, rec.room, rec.joineryId);
-          var at = rec.updatedAt || new Date(0).toISOString();
-          var payload = {
-            kind: "set", level: rec.level || "", room: rec.room || "", joineryId: rec.joineryId || "",
-            requiredDeliveryDate: rec.requiredDeliveryDate || "",
-            manufactureLeadTimeDays: rec.manufactureLeadTimeDays,
-            manufactureStartDate: rec.manufactureStartDate || "",
-            by: rec.setBy || "", at: at
-          };
-          var stamp = statusEventStampFromIso(at);
-          writes.push(getMainJoineryScheduleItemDir(projectHandle, key, true).then(function(dirH){
-            return writeFileText(dirH, statusEventFileName(payload.by, stamp, "set"), JSON.stringify(payload)); // (v17) retried + checked
-          }).catch(function(){}));
-        });
-        return Promise.all(writes);
-      }).then(function(){ migratedThisSession[memoKey] = true; return true; }).catch(function(err){
-        if (isReadFailed(err)) return Promise.reject(err); // legacy file exists but couldn't be read: nothing created, surface it
-        return false;
-      });
-    });
-  }
-  // Whole-project fold of the main Scheduler's schedule (kept for the test
+    // Whole-project fold of the main Scheduler's schedule (kept for the test
   // hook and as the general reader; the dialog itself now uses the per-item
   // strict reader below). Rejects read_failed only when the legacy file or
   // the folder's own existence check can't be read.
   function readMainJoinerySchedule(projectHandle){
     if (!projectHandle) return Promise.resolve([]);
-    return migrateLegacyMainJoineryScheduleIfNeeded(projectHandle).then(function(){
+    return Promise.resolve(false).then(function(){
       return getMainJoineryScheduleEventsRootDir(projectHandle, false).then(null, function(err){
         if (isNotFoundErr(err)) return null;
         forgetProjectDir(projectHandle, [projectSavesDirName()]);
         return Promise.reject(readFailedErr("Joinery Schedule folder", err));
       });
     }).then(function(rootH){
-      if (rootH === null) return readLegacyMainJoinerySchedule(projectHandle);
+      if (rootH === null) return [];
       return readFoldedEventBranch(projectHandle, rootH, mainJoineryScheduleEventsBranchName(), foldMainJoinerySchedule);
     });
   }
@@ -10934,20 +11126,13 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
   // top-of-file comment). null when the item genuinely has no record.
   function readMainScheduleRecordForItem(projectHandle, level, room, joineryId){
     var key = joineryItemPageKey(level, room, joineryId);
-    return migrateLegacyMainJoineryScheduleIfNeeded(projectHandle).then(function(){
+    return Promise.resolve(false).then(function(){
       return getMainJoineryScheduleEventsRootDir(projectHandle, false).then(null, function(err){
         if (isNotFoundErr(err)) return null;
         return Promise.reject(readFailedErr("Joinery Schedule folder", err));
       });
     }).then(function(rootH){
-      if (rootH === null){
-        // No events folder at all and (per the migration check just run) no
-        // legacy file either -- or a legacy file that read as genuinely
-        // absent. Nothing to prefill from.
-        return readLegacyMainJoinerySchedule(projectHandle).then(function(list){
-          return findScheduleRecord(list, level, room, joineryId);
-        });
-      }
+      if (rootH === null) return null; // no events folder: nothing to prefill from
       return rootH.getDirectoryHandle(key, { create: false }).then(function(dirH){
         return listJsonFileHandlesIn(dirH).then(function(handles){
           return Promise.all(handles.map(readJsonFileHandleStrict)).then(dropEmptyEvents);
@@ -10981,8 +11166,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
      cell content) rather than breaking the table. The exact stamp shape
      used elsewhere in that app is {state, at, by}, but this reads either a
      bare string state or a {state,...} object, whichever it finds. */
-  function machiningFlagsFilename(){ return "machining-flags.json"; }
-  /* ---- machining-flags.json v2: event-sourced storage (v4, 2026-09-24) ----
+    /* ---- machining-flags.json v2: event-sourced storage (v4, 2026-09-24) ----
      Second round of the same rebuild already shipped for joinery-status.json
      -- see index.html's own readJoineryStatuses comment for the full
      reasoning, and Machine Schedule's own machining-flags.json comment for
@@ -11001,12 +11185,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
   function getMachiningFlagsEventsRootDir(projectHandle, create){
     return eventsRootDir(projectHandle, machiningFlagsBranchName(), create);
   }
-  function getMachiningFlagsItemDir(projectHandle, key, create){
-    return getMachiningFlagsEventsRootDir(projectHandle, create).then(function(rootH){
-      return rootH.getDirectoryHandle(key, { create: !!create });
-    });
-  }
-  function foldMachiningFlags(events){
+    function foldMachiningFlags(events){
     if (!events || !events.length) return null;
     var any = events[0];
     var rec = { level: any.level || "", room: any.room || "", joineryId: any.joineryId || "" };
@@ -11032,10 +11211,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
   }
   // [] only when the legacy file genuinely isn't there; read_failed for one
   // that exists but won't read -- see migrateLegacyMachiningFlagsIfNeeded.
-  function readLegacyMachiningFlagsFile(projectHandle){
-    return readJsonArrayFileStrict(projectHandle, machiningFlagsFilename(), machiningFlagsFilename());
-  }
-  // Same reordering as migrateLegacyJoineryStatusIfNeeded (2026-09-25,
+    // Same reordering as migrateLegacyJoineryStatusIfNeeded (2026-09-25,
   // sweep -- v6): read the legacy file FIRST, strictly; only then create the
   // events folder. This app only DISPLAYS Machine Schedule's cut state, but
   // it still performs Machine Schedule's own migration when it happens to
@@ -11043,39 +11219,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
   // was mid-sync must not become an empty "Machining Flags" folder that
   // Machine Schedule then trusts forever (every machinist's recorded cut
   // gone from ITS point of view). Memoised per project per session.
-  function migrateLegacyMachiningFlagsIfNeeded(projectHandle){
-    var memoKey = (projectHandle && projectHandle.name || "") + "\u0000machining";
-    if (migratedThisSession[memoKey]) return Promise.resolve(false);
-    return getMachiningFlagsEventsRootDir(projectHandle, false).then(function(){
-      migratedThisSession[memoKey] = true;
-      return false;
-    }, function(err){
-      if (!isNotFoundErr(err)) return Promise.reject(readFailedErr("Machining Flags folder", err)); // can't tell -> don't migrate
-      return readLegacyMachiningFlagsFile(projectHandle).then(function(list){
-        return getMachiningFlagsEventsRootDir(projectHandle, true).then(function(){ return list; });
-      }).then(function(list){
-        var writes = [];
-        list.forEach(function(rec){
-          if (!rec) return;
-          var key = joineryItemPageKey(rec.level, rec.room, rec.joineryId);
-          ["carcase", "colourBoard", "solidSurface"].forEach(function(ct){
-            var cut = rec[ct];
-            if (!cut || !cut.state || cut.state === "pending") return;
-            var payload = { cutType: ct, level: rec.level || "", room: rec.room || "", joineryId: rec.joineryId || "", state: cut.state, by: cut.by || "", at: cut.at || new Date(0).toISOString() };
-            var stamp = statusEventStampFromIso(payload.at);
-            writes.push(getMachiningFlagsItemDir(projectHandle, key, true).then(function(dirH){
-              return writeFileText(dirH, statusEventFileName(payload.by, stamp, ct), JSON.stringify(payload)); // (v17) retried + checked
-            }).catch(function(){}));
-          });
-        });
-        return Promise.all(writes);
-      }).then(function(){ migratedThisSession[memoKey] = true; return true; }).catch(function(err){
-        if (isReadFailed(err)) return Promise.reject(err); // legacy file exists but couldn't be read: nothing created, surface it
-        return false;
-      });
-    });
-  }
-  // Best-effort DISPLAY read (the optional "SS cut (Machine Sched.)"
+    // Best-effort DISPLAY read (the optional "SS cut (Machine Sched.)"
   // column): the per-item fold stays soft (readFoldedEventBranch, see
   // readJsonFileHandle's comment) and any failure here -- including a
   // legacy file that couldn't be read, which correctly refused to migrate
@@ -11086,14 +11230,14 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
   // of "—" for a moment is the documented v1 contract of this column.
   function readMachiningFlags(projectHandle){
     if (!projectHandle) return Promise.resolve([]);
-    return migrateLegacyMachiningFlagsIfNeeded(projectHandle).then(function(){
+    return Promise.resolve(false).then(function(){
       return getMachiningFlagsEventsRootDir(projectHandle, false).then(null, function(err){
         if (isNotFoundErr(err)) return null;
         forgetProjectDir(projectHandle, [projectSavesDirName()]);
         return Promise.reject(readFailedErr("Machining Flags folder", err));
       });
     }).then(function(rootH){
-      if (rootH === null) return readLegacyMachiningFlagsFile(projectHandle);
+      if (rootH === null) return [];
       return readFoldedEventBranch(projectHandle, rootH, machiningFlagsBranchName(), foldMachiningFlags, 2); // (2026-10-01) fold output gained solidSurfaceReverted
     }).catch(function(err){
       console.warn("machining-flags read failed (display column left blank):", err);
@@ -11512,7 +11656,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
     if (!pills || !pills.length) return "#5b6272";
     var keys = pills.map(function(p){ return p.key; });
     if (keys.indexOf("delivery") !== -1 || keys.indexOf("start") !== -1 || keys.indexOf("late") !== -1) return "#ff5d5d";
-    if (keys.indexOf("upcoming") !== -1) return "#4f5fe0";
+    if (keys.indexOf("upcoming") !== -1) return "#1ec8a5";
     if (keys.indexOf("none") !== -1) return "#5b6272";
     return "#33c46a"; // ontrack / early / ontime
   }
@@ -12169,7 +12313,16 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
   // prefill read opens the dialog anyway -- empty, with a toast saying the
   // date couldn't be pulled across right now -- rather than blocking a
   // schedule the person can type in.
+  // (2026-10-04) Andrew: "schedules should require pin for updating dates" -- the signed-in person confirms their PIN first
   function openScheduleModal(projectHandle, projectName, item, onSaved){
+    if (window.__utzTestNoDatePin) return openScheduleModalConfirmed(projectHandle, projectName, item, onSaved); // tests only
+    if (!deviceUserName){ showToast("Sign in first — changing a date needs your name and PIN."); return Promise.resolve(); }
+    return confirmOwnPin(deviceUserName, "to change the schedule date").then(function(ok){
+      if (!ok) return;
+      return openScheduleModalConfirmed(projectHandle, projectName, item, onSaved);
+    });
+  }
+  function openScheduleModalConfirmed(projectHandle, projectName, item, onSaved){
     return readJoinerySchedule(projectHandle).then(function(list){
       var existingRec = findScheduleRecord(list, item.level, item.room, item.joineryId);
       // "this schedule pulls its site delivery date from the main
@@ -12486,10 +12639,13 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
     });
   }
 
+  // (2026-10-04) names per app + new names approved by an administrator -- see UTZLINE-USERS
+  UtzUsers.init({ appCode: "SolidSurfaceSchedule", getRoot: function(){ return projectsRootHandle; }, getName: function(){ return deviceUserName || ""; },
+    readUsers: function(){ return readUsersCsv(); }, writeUsers: function(rows){ return writeUsersCsv(rows); }, toast: function(m){ showToast(m); }, refresh: function(){ return populateIdentitySelector(); } });
   function populateIdentitySelector(){
     if (!identitySelector) return Promise.resolve();
     return readUsersCsv().then(function(rows){
-      var names = rows.map(function(r){ return r.name; }).filter(Boolean);
+      var names = UtzUsers.filterNames(rows); // (2026-10-04) only the names shown in this app (ShowInApps)
       names.sort(function(a, b){ return a.toLowerCase().localeCompare(b.toLowerCase()); });
       identitySelector.innerHTML = "";
       if (!deviceUserName || names.indexOf(deviceUserName) === -1){
@@ -12600,6 +12756,13 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
                   revertIdentitySelector(previousValue);
                   return;
                 }
+                if (UtzUsers.needsApproval(freshRows)){
+                  // (2026-10-04) Andrew: "when users get added, admin gets a notification to approve"
+                  return UtzUsers.request({ name: newName, pin: pin1, showInApps: checked.join(";") }).then(function(){
+                    revertIdentitySelector(previousValue);
+                    showToast("“" + newName + "” has been sent to an administrator to approve. You can sign in with it once it's approved.");
+                  });
+                }
                 freshRows.push({ name: newName, pin: pin1, showInApps: checked.join(";") });
                 return writeUsersCsv(freshRows).then(function(){
                   return setDeviceUserName(newName);
@@ -12699,6 +12862,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
         projectHandle: projectHandle,
         level: item.level,
         room: item.room,
+        itemNo: window.UtzItemFiles && parseInt(item.itemNo, 10) > 0 ? UtzItemFiles.pad3(item.itemNo) : "",
         joineryId: item.joineryId,
         description: item.description,
         workOrderNo: item.workOrderNo,
@@ -12879,7 +13043,8 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
   // columns are never part of the sticky/frozen set (only Work order # and
   // earlier are, per schema §5).
   function scheduleRowCells(row, showProject){
-    return (showProject ? "<td class=\"sticky-col\">" + escapeHtml(row.project) + "</td>" : "") +
+    return "<td class=\"sticky-col\">" + escapeHtml(row.itemNo || "") + "</td>" +
+      (showProject ? "<td class=\"sticky-col\">" + escapeHtml(row.project) + "</td>" : "") +
       "<td class=\"sticky-col\">" + escapeHtml(row.level) + "</td>" +
       "<td class=\"sticky-col\">" + escapeHtml(row.room) + "</td>" +
       "<td class=\"sticky-col\">" + escapeHtml(row.joineryId) + "</td>" +
@@ -12903,7 +13068,8 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
       // on every single row.
       itemExtras.cellsHtml(row) + // (v17) Cutting file + Notes
       "<td class=\"row-actions\">" +
-        "<button type=\"button\" class=\"btn secondary sm open-item-btn\">Open item</button>" +
+        // (2026-10-04) Andrew: "Remove the open item button, as pressing the row opens it anyways" -- tapping the row (wireRowClick) opens the item page.
+        "<button type=\"button\" class=\"btn secondary sm open-item-btn\" hidden>Open item</button>" + // kept hidden (not shown): scripted checks still open the item through it
         (row.jobNote ? "<button type=\"button\" class=\"btn secondary sm jobnote-btn\">Open job note</button>" : "") +
         "<button type=\"button\" class=\"btn secondary sm view-plan-btn\">View on plan</button><button type=\"button\" class=\"btn secondary sm edit-sched-btn\">Edit schedule</button></td>";
   }
@@ -13009,7 +13175,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
     }
     // "Open item" (2026-09-26, v8, part D) -- ported verbatim from Machine
     // Schedule's / the main Scheduler's own row-actions button.
-    openItemBtn.addEventListener("click", function(){
+    if (openItemBtn) openItemBtn.addEventListener("click", function(){
       withHandle(function(){ openJoineryItemPage(row, returnScreen); });
     });
     wireRowLongPress(tr, function(){ withHandle(function(){ openJoineryItemPage(row, returnScreen); }); }); // v15
@@ -13139,6 +13305,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
       "<dt>Project</dt><dd>" + escapeHtml(row.project) + "</dd>" +
       "<dt>Level</dt><dd>" + escapeHtml(row.level) + "</dd>" +
       "<dt>Room</dt><dd>" + escapeHtml(row.room) + "</dd>" +
+      "<dt>No.</dt><dd>" + escapeHtml(parseInt(row.itemNo, 10) > 0 ? UtzItemFiles.pad3(row.itemNo) : "—") + "</dd>" +
       "<dt>Description</dt><dd>" + escapeHtml(row.description || "(none)") + "</dd>" +
       "<dt>Work order #</dt><dd>" + (row.workOrderNo ? escapeHtml(row.workOrderNo) : "—") + "</dd>" +
       "<dt>Status</dt><dd>" + statusLabelHtml(row.statusKey) + "</dd>" +
@@ -13156,11 +13323,65 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
     joineryItemReturnScreen = returnScreen || "home";
     joineryItemReturnToPlan = (returnScreen === "planCanvas");
     if (joineryItemReturnToPlan) planCanvasScreen.hidden = true;
-    joineryItemTitle.textContent = row.joineryId ? row.joineryId : "(no ID)";
+    joineryItemTitle.textContent = row.joineryId || "(no ID)";
     renderJoineryItemMetaGrid(row);
     showScreen("joineryItem");
     itemExtras.renderItemCards(document.getElementById("screenJoineryItem"), row); // (v17) Cutting file + Notes cards
     renderJoineryItemSubOrders(row);
+    renderJoineryItemItps(row);
+  }
+  // (2026-10-04) the ITPs card: PDFs\ITPs\<app>\<Level>\<Room>\<item>\<item file name>_<yyyy-mm-dd_hhmmss>.pdf
+  // (2026-10-04) "Signed off 4 Oct 2026, 6:28 pm": the ITP PDF is written when the item is signed off (and replaced if it is signed off again)
+  function itpPdfSignedOffLabel(fh){
+    return fh.getFile().then(function(f){
+      var d = new Date(f.lastModified);
+      return isNaN(d.getTime()) ? "" : "Signed off " + d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) + ", " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    }, function(){ return ""; });
+  }
+  function renderJoineryItemItps(row){
+    var el = document.getElementById("jiItpsList");
+    el.innerHTML = "<p class=\"sub\" style=\"margin:0;\">Loading…</p>";
+    var base = joineryItemPageKey(row.level, row.room, row.joineryId, row.project) + "_";
+    var apps = ["Manufacture ITP", "Install ITP", "Delivery ITP"];
+    function list(app){
+      // (2026-10-04) the item's own folder: PDFs\ITPs\<app>\<Level>\<Room>\<item>\
+      return UtzItemFiles.itpPdfDir(row.projectHandle, app, base.slice(0, -1), { level: row.level, room: row.room }).then(function(d){
+        return d ? listOne(d).then(function(all){ all.sort(function(a, b){ return b.name.localeCompare(a.name); }); return all; }) : [];
+      }, function(){ return []; });
+      function listOne(d){
+          var out = [], it = d.values();
+          function step(){ return it.next().then(function(r){
+            if (r.done) return out;
+            var n = r.value && r.value.name;
+            if (r.value && r.value.kind === "file" && /\.pdf$/i.test(n)) out.push(r.value);
+            return step();
+          }); }
+          return step();
+      }
+    }
+    Promise.resolve(row.projectHandle ? null : ensureRowProjectHandle(row)).then(function(){ return Promise.all(apps.map(list)); }).then(function(res){
+      if (activeJoineryItemRow !== row) return;
+      el.innerHTML = "";
+      apps.forEach(function(app, i){
+        var h = document.createElement("p"); h.className = "sub"; h.style.cssText = "margin:8px 0 4px;font-weight:600;";
+        h.textContent = app + (res[i].length ? "" : " — no PDF yet");
+        el.appendChild(h);
+        res[i].forEach(function(fh, j){
+          var r = document.createElement("div"); r.style.cssText = "display:flex;align-items:center;gap:10px;margin:4px 0;";
+          var t = document.createElement("span"); t.style.flex = "1"; t.textContent = fh.name;
+          itpPdfSignedOffLabel(fh).then(function(w){ if (w) t.textContent = w + " — " + fh.name; });
+          var b = document.createElement("button"); b.type = "button"; b.className = "btn secondary sm"; b.textContent = "Open";
+          b.addEventListener("click", function(){
+            fh.getFile().then(function(f){ var url = URL.createObjectURL(f); window.open(url, "_blank"); setTimeout(function(){ URL.revokeObjectURL(url); }, 60000); })
+              .catch(function(err){ console.error(err); showToast("Couldn't open that ITP — try again."); });
+          });
+          r.appendChild(t); r.appendChild(b); el.appendChild(r);
+        });
+      });
+    }).catch(function(err){
+      console.error("Listing ITPs failed:", err);
+      if (activeJoineryItemRow === row) el.innerHTML = "<p class=\"sub\" style=\"margin:0;\">Couldn't load the ITPs.</p>";
+    });
   }
   function closeJoineryItemPage(){
     // The plan-canvas overlay isn't one of the `screens` map's entries
@@ -13210,8 +13431,11 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
   function subOrdersFileNameFor(level, room, joineryId, project){
     return joineryItemPageKey(level, room, joineryId, project) + ".json";
   }
-  function subOrdersDir(projectHandle, leaf){
-    return projectDir(projectHandle, [projectSavesDirName(), "UTZLINE Sub Orders", leaf], false);
+  // (2026-10-04) the item's own folder: Project Saves\UTZLINE Sub Orders\Orders\<Level>\<Room>\<item>\ -- its <item>.json and the
+  // order files attached to it (UtzItemFiles)
+  function subOrdersItemDir(projectHandle, level, room, joineryId){
+    var key = subOrdersFileNameFor(level, room, joineryId, projectHandle && projectHandle.name).replace(/\.json$/i, "");
+    return projectDir(projectHandle, UtzItemFiles.itemSegs(UtzItemFiles.ORDERS_ROOT, key, projectHandle && projectHandle.name, { level: level, room: room }), false);
   }
   // Strict "unreadable is not empty" read of one item's Orders/ file (see
   // readTextFileStrict): { found:false } ONLY for a genuinely missing
@@ -13219,7 +13443,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
   // once, then rejects read_failed. Resolves the RAW on-disk array.
   function readSubOrdersRaw(projectHandle, level, room, joineryId){
     var fname = subOrdersFileNameFor(level, room, joineryId, projectHandle && projectHandle.name);
-    return subOrdersDir(projectHandle, "Orders").then(function(dirH){
+    return subOrdersItemDir(projectHandle, level, room, joineryId).then(function(dirH){
       return readTextFileStrict(dirH, fname, "Sub Orders file " + fname, function(text){
         var parsed = JSON.parse(text);
         if (!Array.isArray(parsed)) throw new Error("not a JSON array");
@@ -13239,7 +13463,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
     return readSubOrdersRaw(projectHandle, row.level, row.room, row.joineryId).then(function(res){
       var orders = res.orders.filter(function(o){ return o && typeof o === "object"; });
       if (!orders.length) return [];
-      return subOrdersDir(projectHandle, "Files").then(function(filesDirH){
+      return subOrdersItemDir(projectHandle, row.level, row.room, row.joineryId).then(function(filesDirH){ // (2026-10-04) attached files sit with the item
         return Promise.all(orders.map(function(o){
           if (!o.storedName) return Object.assign({}, o, { handle: null });
           return filesDirH.getFileHandle(o.storedName, { create: false }).then(function(fh){
@@ -13545,8 +13769,29 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
     }
     return null;
   }
+  /* (2026-10-04) Andrew: "scheduler windows currently have 2 scroll bars, i only want the one on the tables". The table's box is
+     sized to the room left in the window below the filters (not a fixed 100vh - 70px, which with the header and filters above
+     it made the page scroll as well), so the page itself never scrolls on a table screen -- only the table does, and the
+     table's own horizontal bar sits on screen (the pinned copy at the bottom of the window is then not needed). */
+  var fitMainEl = document.querySelector("main");
+  function fitTableToWindow(){
+    if (!fitMainEl) return null;
+    var active = document.querySelector(".screen:not([hidden])"), box = null;
+    var boxes = active ? active.querySelectorAll(".table-scroll") : [];
+    for (var i = 0; i < boxes.length; i++){ if (boxes[i].offsetParent !== null){ box = boxes[i]; break; } }
+    fitMainEl.classList.toggle("fit-table", !!box);
+    if (!box) return null;
+    var mr = fitMainEl.getBoundingClientRect();
+    var top = box.getBoundingClientRect().top - mr.top + fitMainEl.scrollTop;
+    var pad = parseFloat(getComputedStyle(fitMainEl).paddingBottom) || 0;
+    var h = Math.floor(fitMainEl.clientHeight - top - pad - 2);
+    box.style.maxHeight = Math.max(260, h) + "px";
+    return box;
+  }
   function refreshStickyHScroll(){
     stickyHScrollTarget = findActiveTableScroll();
+    var fitted = fitTableToWindow();
+    if (fitted && stickyHScrollTarget === fitted && fitted.getBoundingClientRect().bottom <= window.innerHeight + 1) stickyHScrollTarget = null; // its own bar is on screen
     if (!stickyHScrollTarget){
       stickyHScrollBar.hidden = true;
       return;
@@ -13603,6 +13848,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
         if (overallSort.dir === "desc") th.classList.add("desc");
       }
     });
+    utzShadeSortedColumn(overallTable);
     updateStickyOffsets(overallTable);
     refreshStickyHScroll();
   }
@@ -13779,6 +14025,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
         if (projSort.dir === "desc") th.classList.add("desc");
       }
     });
+    utzShadeSortedColumn(projTable);
     updateStickyOffsets(projTable);
     refreshStickyHScroll();
   }
@@ -14208,7 +14455,6 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
   // Shared by both the normal path (a handle already in THIS app's own
   // database) and the one-time carry-over path (a handle just copied
   // across from the old shared database) -- see
-  // readLegacyRootHandleForCarryOver's own comment.
   function continueBootWithRootHandle(handle){
     projectsRootHandle = handle; projectsRootName = handle.name;
     invalidateDirHandleCache();
@@ -14229,8 +14475,8 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
   // each table's Text size bar; the frozen identity columns and the actions column stay put; remembered per device
   if (window.UtzColumns){
     function tvBarFor(t){ var box = t && t.parentNode; var bar = box && box.previousElementSibling; return (bar && bar.classList && bar.classList.contains("tv-zoom")) ? bar : null; }
-    UtzColumns.attach(overallTable, { storageKey: "utzline-solid-surface-schedule:overall:columns", frozen: 6, mountBefore: tvBarFor(overallTable), onApply: function(){ refreshStickyHScroll(); } });
-    UtzColumns.attach(projTable, { storageKey: "utzline-solid-surface-schedule:project:columns", frozen: 5, mountBefore: tvBarFor(projTable), onApply: function(){ refreshStickyHScroll(); } });
+    UtzColumns.attach(overallTable, { storageKey: "utzline-solid-surface-schedule:overall:columns", frozen: 7, toggle: ["itemNo"], mountBefore: tvBarFor(overallTable), onApply: function(){ refreshStickyHScroll(); } });
+    UtzColumns.attach(projTable, { storageKey: "utzline-solid-surface-schedule:project:columns", frozen: 6, toggle: ["itemNo"], mountBefore: tvBarFor(projTable), onApply: function(){ refreshStickyHScroll(); } });
   }
     if (typeof window.showDirectoryPicker !== "function"){
       setupError.hidden = false;
@@ -14241,22 +14487,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
     loadDeviceUserName(); // shared device identity -- never blocks boot; also fires from populateHome() above, since order isn't guaranteed
     idbGet("projectsRootHandle").then(function(handle){
       if (handle) return continueBootWithRootHandle(handle);
-      // Nothing in THIS app's own (new, v7) database yet -- one-time,
-      // best-effort carry-over from the old shared database before falling
-      // back to "choose your Projects folder". See
-      // readLegacyRootHandleForCarryOver's own comment: never writes to,
-      // deletes, or otherwise disturbs the old database.
-      return readLegacyRootHandleForCarryOver().then(function(legacyHandle){
-        if (!legacyHandle){ showScreen("setup"); return; }
-        // Persisting it into THIS app's own database is itself best-effort
-        // (same as pickProjectsRootFolder) -- a failed write here still
-        // continues booting with the carried-over handle for THIS session,
-        // it just means next boot falls back to "choose your Projects
-        // folder" again.
-        return idbSet("projectsRootHandle", legacyHandle).catch(function(){}).then(function(){
-          return continueBootWithRootHandle(legacyHandle);
-        });
-      }).catch(function(){ showScreen("setup"); });
+      showScreen("setup");
     }).catch(function(){
       projectsRootHandle = null; projectsRootName = "";
       showScreen("setup");
@@ -14314,7 +14545,6 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
     readJoinerySchedule: readJoinerySchedule,
     writeJoineryScheduleEvent: writeJoineryScheduleEvent,
     foldJoinerySchedule: foldJoinerySchedule,
-    readLegacyJoinerySchedule: readLegacyJoinerySchedule,
     joineryScheduleEventsBranchName: joineryScheduleEventsBranchName,
     readMainJoinerySchedule: readMainJoinerySchedule,
     findScheduleRecord: findScheduleRecord,
@@ -14387,7 +14617,7 @@ window.UTZLINE_LOGO_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQ
   ["pointerdown", "pointermove", "keydown", "wheel", "touchstart", "scroll"].forEach(function(ev){ window.addEventListener(ev, touch, { capture: true, passive: true }); });
   function closeApp(){
     if (fired) return; fired = true;
-    try { if (window.UtzSignIn && UtzSignIn.isLight && UtzSignIn.isLight() && UtzSignIn.lock){ UtzSignIn.lock(); hide(); last = Date.now(); fired = false; return; } } catch (e) {}
+    try { if (window.UtzSignIn && UtzSignIn.active && UtzSignIn.active() && UtzSignIn.lock){ UtzSignIn.lock(); hide(); last = Date.now(); fired = false; return; } } catch (e) {}
     try { location.reload(); } catch (e) {}
   }
   function hide(){ if (dlg && dlg.parentNode) dlg.parentNode.removeChild(dlg); dlg = null; }

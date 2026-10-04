@@ -252,11 +252,13 @@ var ICON_VERSION = "v1";
 // v20 (2026-09-30): RC 1.0 -- day / night mode, the plan shows solid-surface items only (red / blue / green ✓), tick-box status filters, hide / rearrange columns, the builder's logo.
 // v21 (2026-10-01): RC 1.0 -- Windows' 260-character path limit: shorter record names in the event store (see README)
 // v27 (2026-10-02): RC 1.0 -- builder logo far right of the top bar, logos folder, reversed Machined, dark-mode controls.
-var CACHE_NAME = "utzline-solid-surface-schedule-cache-v37";
+var CACHE_NAME = "utzline-solid-surface-schedule-cache-v41";
 
 var PRECACHE_URLS = [
   "./",
   "./index.html",
+  "./pdf.min.js", // (2026-10-04) the in-app PDF viewer (shared/pdf-view)
+  "./pdf.worker.min.js",
   "./manifest.json?v=" + ICON_VERSION,
   "./icons/icon-192.png?v=" + ICON_VERSION,
   "./icons/icon-512.png?v=" + ICON_VERSION,

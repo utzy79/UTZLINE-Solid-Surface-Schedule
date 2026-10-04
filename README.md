@@ -1,6 +1,12 @@
 # UTZLINE Solid Surface Schedule — installable app
 
-**Current version: v37 (RC 1.0)** (its own independent version line, separate from
+**Current version: v41 (RC 1.0)** (its own independent version line, separate from
+
+**v40 (2026-10-04): item numbers, everything split by room / item.** **No.** column beside Joinery ID in both schedules (Columns: untick to hide); the item page title shows "JG.33.1 - 001". Every joinery item has its own 3-digit number (001, 002 ... given once by Projects, never reused) and it follows the code in the item's file name ("JG.33.1 - 001"). Every save is split by level, room and item, even when a room has only one item: `Project Saves\RW\<Level>\<Room>\<item>\` (+ `Log\`), `PDFs\RW\<Level>\<Room>\<item>\`, `Project Saves\UTZLINE ITP\<app>\<Level>\<Room>\<item>.json`, `Project Saves\UTZLINE ITP\<app> Log\<Level>\<Room>\<item>\`, `PDFs\ITPs\<Install|Manufacture|Delivery>\<Level>\<Room>\<item>\`, `Project Saves\Site Measures\<Level>\<Room>\<page>\`, `Project Saves\UTZLINE Sub Orders\Orders\<Level>\<Room>\<item>\` (the order list and its files). <Room> is the room number. Fresh install: no older folders or older-project layouts are read (Andrew: *"I DONT WANT BACKWRDS COMPATIBILITY. i am starting brand new"*).
+
+**v39 (2026-10-04): one scroll bar, names per app.** The table fits the window, so only the table scrolls. Names list only shows the names ticked for this app (ShowInApps now works, by code or by the app's name as typed in the spreadsheet; administrators and rows with nothing ticked show everywhere). A new name waits for an administrator to approve it: Andrew gets a "New name to approve" box the next time he signs in (choose its apps, Approve or Decline). New "Users" pill beside Change folder (administrator PIN): tick who is an administrator, choose each name's apps, approve names waiting; nobody is removed and one administrator always stays. PDFs open inside the app on phones and tablets (Zoom, Share, Save, Close; the Back button closes it and stays on the screen).
+
+**v38 (2026-10-04): new colours, shaded sort column, ITPs card.** Teal to match the logo (dark #1ec8a5, light #0b7a63) with the UTZ + coloured LINE wordmark. The column a table is sorted by is lightly shaded; the row's Open item button is gone. The joinery item page has an ITPs card (each ITP's PDFs with Open). Rework PDFs: only the latest of each rework is listed.
 
 **v37 (2026-10-02): UTZLINE-style app icon.** House logo + wordmark with the app name underneath, in the same style as the ITP, Site Measure and Viewer icons (Andrew: "The schedules need the utzline style logos" / "And delivery").
 

@@ -1,6 +1,6 @@
 # UTZLINE Solid Surface Schedule — installable app
 
-**Current version: v52 (RC 1.0)** (its own independent version line, separate from
+**Current version: v53 (RC 1.0)** (its own independent version line, separate from
 
 **v49 (2026-10-07):** **Names only appear in apps the person has permission for** (Andrew: "when opening any app, your name should only appear if you have permission to be in that app."). A name with no apps ticked and no department default is listed nowhere; a department with no Apps list gives no apps; the name signed in on the device is no longer an exception -- with no permission for this app it is signed out and the cover says "No access to this app. Ask an administrator". Administrators still see everything; while there is no administrator yet (a new setup) nobody is locked out; the last-read users / departments / department apps are used when the folder can't be read. The first time an administrator opens an app a note says "N names have no app access set. Open Users to assign." Also: a department's default apps + per-person extras (Users screen), the site measure opens as the PDF first. Nothing is deleted.
 
